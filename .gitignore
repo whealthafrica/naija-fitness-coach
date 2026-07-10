@@ -1,0 +1,16 @@
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/build/
+apps/mobile/.packages
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+.env
+.env.local
+.env.*.local
+apps/mobile/.env
+apps/web/.env.local
+supabase/.branches
+supabase/.temp
+.DS_Store

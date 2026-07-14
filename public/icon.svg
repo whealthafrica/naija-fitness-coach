@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Background Warm Cream -->
+  <rect width="512" height="512" rx="128" fill="#F5F0EA"/>
+  
+  <!-- Outer Ring Warm Gold -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#C4922A" stroke-width="16"/>
+  
+  <!-- Inner Silhouette / Shape Deep Burgundy -->
+  <path d="M256 120 
+           C 180 120, 150 180, 150 256 
+           C 150 332, 180 392, 256 392 
+           C 332 392, 362 332, 362 256 
+           C 362 180, 332 120, 256 120 Z" 
+        fill="#8B1A1A"/>
+        
+  <!-- Accent Line -->
+  <path d="M220 256 L292 256" stroke="#FAF7F2" stroke-width="12" stroke-linecap="round"/>
+  <path d="M256 220 L256 292" stroke="#C4922A" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,6 @@
+// Developer metadata testing endpoint
+import { NextResponse } from 'next/server'
+
+export async function GET() {
+  return new Response('OK')
+}

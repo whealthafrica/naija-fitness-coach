@@ -1,0 +1,18 @@
+{
+  "name": "Naija Fitness Coach",
+  "short_name": "Naija Fit",
+  "description": "Personalized health & fitness coaching, tailored for your body.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F0EA",
+  "theme_color": "#8B1A1A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

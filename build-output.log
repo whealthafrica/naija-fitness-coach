@@ -1,0 +1,23 @@
+
+> naija-fitness-coach@0.1.0 build
+> next build
+
+  Γû▓ Next.js 14.2.35
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully
+   Linting and checking validity of types ...
+Failed to compile.
+
+./app/community/page.tsx:330:16
+Type error: Cannot find name 'Loader2'.
+
+  328 |           {eventsLoading ? (
+  329 |             <div className="flex items-center gap-2 text-xs text-text-secondary py-4">
+> 330 |               <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+      |                ^
+  331 |               <span>Loading events...</span>
+  332 |             </div>
+  333 |           ) : upcomingEvents.length === 0 ? (
+Next.js build worker exited with code: 1 and signal: null

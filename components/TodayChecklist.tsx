@@ -1,257 +1,147 @@
 'use client'
 
 // Built against PRD Section 8.2 (Today Checklist & Task Completion Verification)
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import { CheckCircle2, Play, Check, Camera, Timer, X, Loader2, Award } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { createClient } from '@/utils/supabase/client'
 import { awardConsistencyPoints, TierType } from '@/lib/cpEngine'
 import { coachesConfig } from '@/lib/coaches'
+import { TaskDef, tasksByCondition, simplifyTask, detectStruggle } from '@/lib/adaptivePathways'
 
-interface TaskDef {
-  id: string
-  title: string
-  desc: string
-  type: 'timed' | 'loggable' | 'photo' | 'vitals'
-  
-  // Timed tasks
-  duration?: number // in seconds
-  recallQuestion?: string
-  recallChoices?: string[]
-  recallCorrectIndex?: number
-  
-  // Loggable tasks
-  logQuestion?: string
-  logChoices?: string[]
-  logFreeTextLabel?: string
-  
-  // Photo tasks
-  photoCategory?: string
-}
+function WeightRuler({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const min = 20
+  const max = 250
+  const step = 0.1
+  const tickSpacing = 12 // pixels per 1 kg
 
-// Database-grade tasks mapping by focus area
-const tasksByCondition: Record<string, { pathway: TaskDef[]; coach: TaskDef[] }> = {
-  'Type 2 Diabetes': {
-    pathway: [
-      {
-        id: 'db_vitals_check',
-        title: 'Vitals Check-In',
-        desc: 'Record your morning blood glucose reading',
-        type: 'vitals'
-      },
-      {
-        id: 'db_sugar_log',
-        title: 'Blood Sugar Log',
-        desc: 'Log your fasting blood glucose levels',
-        type: 'loggable',
-        logQuestion: 'What was your fasting blood glucose today?',
-        logChoices: ['Under 100 mg/dL (Normal)', '100-125 mg/dL (Elevated)', '126+ mg/dL (High)'],
-        logFreeTextLabel: 'Any notes on symptoms or meals last night?'
-      },
-      {
-        id: 'db_stretch',
-        title: '15-min Stretch',
-        desc: 'Follow the glucose-sensitive mobility stretch',
-        type: 'timed',
-        duration: 15,
-        recallQuestion: 'Which stretch did you focus on for muscle glucose uptake?',
-        recallChoices: ['Quadriceps Activation Stretch', 'Neck Side Bend', 'Wrist Extension'],
-        recallCorrectIndex: 0
-      }
-    ],
-    coach: [
-      {
-        id: 'db_meal_photo',
-        title: "Tunde's Check: Breakfast Log",
-        desc: 'Snap a photo of your glucose-friendly breakfast',
-        type: 'photo',
-        photoCategory: 'meal'
-      }
-    ]
-  },
-  'Hypertension': {
-    pathway: [
-      {
-        id: 'ht_vitals_check',
-        title: 'Vitals Check-In',
-        desc: 'Record your systolic and diastolic blood pressure',
-        type: 'vitals'
-      },
-      {
-        id: 'ht_bp_log',
-        title: 'Blood Pressure Log',
-        desc: 'Measure and record morning blood pressure',
-        type: 'loggable',
-        logQuestion: 'What was your blood pressure reading category?',
-        logChoices: ['Normal (<120/80)', 'Elevated (120-129/<80)', 'High Stage 1 (130-139/80-89)', 'High Stage 2 (140+/90+)'],
-        logFreeTextLabel: 'How did you feel when taking the measurement?'
-      },
-      {
-        id: 'ht_hydration',
-        title: 'Morning Hydration',
-        desc: 'Drink 500ml of water to support vascular flow',
-        type: 'loggable',
-        logQuestion: 'What did you drink just now?',
-        logChoices: ['Pure Water', 'Zobo (Hibiscus Tea)', 'Unsweetened Coconut Water', 'Other'],
-        logFreeTextLabel: 'How hydrated does your body feel?'
-      },
-      {
-        id: 'ht_stretch',
-        title: '15-min Stretch',
-        desc: 'Follow the vascular relaxation stretch',
-        type: 'timed',
-        duration: 15,
-        recallQuestion: 'Which breathing technique did you use during the stretches?',
-        recallChoices: ['4-7-8 Breath Control', 'Rapid Diaphragmatic Breath', 'Mouth Only Panting'],
-        recallCorrectIndex: 0
-      }
-    ],
-    coach: [
-      {
-        id: 'ht_salt_shaker_off',
-        title: "Adaeze's Challenge: Salt Shaker Off",
-        desc: 'Use local spices instead of table salt today',
-        type: 'loggable',
-        logQuestion: 'Which spice did you use for seasoning today?',
-        logChoices: ['Uziza (African Black Pepper)', 'Uda (Negro Pepper)', 'Garlic & Ginger Mix', 'No seasoning used'],
-        logFreeTextLabel: 'Any thoughts on the taste without table salt?'
-      }
-    ]
-  },
-  'PCOS': {
-    pathway: [
-      {
-        id: 'pc_vitals_check',
-        title: 'Vitals Check-In',
-        desc: 'Record your current body weight',
-        type: 'vitals'
-      },
-      {
-        id: 'pc_meal_log',
-        title: 'Hormonal Breakfast Log',
-        desc: 'Eat a protein-rich meal within 1 hour of waking',
-        type: 'loggable',
-        logQuestion: 'What protein source did you include?',
-        logChoices: ['Eggs', 'Beans / Akara', 'Fish / Poultry', 'No protein included'],
-        logFreeTextLabel: 'Any notes on hunger or energy levels?'
-      },
-      {
-        id: 'pc_stretch',
-        title: '15-min Stretch',
-        desc: '5-minute pelvic and mobility exercises',
-        type: 'timed',
-        duration: 15,
-        recallQuestion: 'Which posture was held to improve pelvic blood circulation?',
-        recallChoices: ['Butterfly Posture (Baddha Konasana)', 'High Plank Hold', 'Seated Forward Fold'],
-        recallCorrectIndex: 0
-      }
-    ],
-    coach: [
-      {
-        id: 'pc_squat_prep',
-        title: "Ngozi's Challenge: Heavy Lift Prep",
-        desc: 'Review the kettlebell squat form video and lift prep',
-        type: 'loggable',
-        logQuestion: "What was Ngozi's safety advice on foot positioning?",
-        logChoices: ['Keep feet shoulder-width apart and rooted', 'Stand on tip-toes', 'Keep feet fully together'],
-        logFreeTextLabel: 'Any questions for Ngozi about your squat form?'
-      }
-    ]
-  },
-  'Pre-Diabetes': {
-    pathway: [
-      {
-        id: 'pd_vitals_check',
-        title: 'Vitals Check-In',
-        desc: 'Record your morning blood glucose reading',
-        type: 'vitals'
-      },
-      {
-        id: 'pd_metabolic_log',
-        title: 'Metabolic Log',
-        desc: 'Log morning glucose and habit trend',
-        type: 'loggable',
-        logQuestion: 'Did you get at least 7 hours of rest last night?',
-        logChoices: ['Yes, slept well', 'No, disrupted sleep', 'No, slept less than 5 hours'],
-        logFreeTextLabel: 'How does your resting energy level feel?'
-      },
-      {
-        id: 'pd_fiber_focus',
-        title: 'Fiber & Grain Focus',
-        desc: 'Include 10g of soluble fiber in your morning meal',
-        type: 'loggable',
-        logQuestion: 'What fiber-rich food did you eat?',
-        logChoices: ['Oats / Oatmeal', 'Garden Eggs / Vegetables', 'Chia Seeds / Flaxseeds', 'None today'],
-        logFreeTextLabel: 'Any digestion notes?'
-      }
-    ],
-    coach: [
-      {
-        id: 'pd_carb_audit',
-        title: "Emeka's Check: Carbohydrate Audit",
-        desc: 'Audit total carb portions for lunch prep',
-        type: 'loggable',
-        logQuestion: 'What portion size did you allocate for starches (rice, yam)?',
-        logChoices: ['Quarter of plate (Recommended)', 'Half of plate', 'Full plate'],
-        logFreeTextLabel: 'What starch did you prepare?'
-      }
-    ]
-  },
-  'General Fitness': {
-    pathway: [
-      {
-        id: 'gf_vitals_check',
-        title: 'Vitals Check-In',
-        desc: 'Record your current body weight',
-        type: 'vitals'
-      },
-      {
-        id: 'gf_stretches',
-        title: 'Morning Stretches',
-        desc: 'Follow the 10-minute dynamic mobility routine',
-        type: 'timed',
-        duration: 15,
-        recallQuestion: 'Which joint was warmed up first in the routine?',
-        recallChoices: ['Shoulder joints', 'Ankle joints', 'Hip joints'],
-        recallCorrectIndex: 0
-      },
-      {
-        id: 'gf_water',
-        title: 'Daily Water Goal',
-        desc: 'Drink 1.5L of water throughout the morning',
-        type: 'loggable',
-        logQuestion: 'How much water have you drunk so far?',
-        logChoices: ['500ml (1 bottle)', '1L (2 bottles)', '1.5L+ (Met Goal)', 'Less than 500ml'],
-        logFreeTextLabel: 'Any other drinks today?'
-      }
-    ],
-    coach: [
-      {
-        id: 'gf_step_boost',
-        title: "Amara's Challenge: Step Boost",
-        desc: 'Add 2,000 steps to your normal daily walk',
-        type: 'loggable',
-        logQuestion: 'How did you add the extra steps?',
-        logChoices: ['Paced during calls', 'Took a longer route home', 'Walked in the morning', 'Did not get the extra steps'],
-        logFreeTextLabel: 'How do your legs and joints feel?'
-      }
-    ]
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isReady, setIsReady] = useState(false)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const currentVal = value ? parseFloat(value) : 70
+
+  // Set initial scroll position based on current value
+  useEffect(() => {
+    if (!containerRef.current) return
+    const container = containerRef.current
+    const targetScroll = (currentVal - min) * tickSpacing
+    container.scrollLeft = targetScroll
+    setIsReady(true)
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+    }
+  }, [])
+
+  // Listen to scroll events to update value
+  const handleScroll = () => {
+    if (!containerRef.current || !isReady) return
+    const container = containerRef.current
+    const scrollLeft = container.scrollLeft
+    const calculated = min + scrollLeft / tickSpacing
+    const snapped = Math.max(min, Math.min(max, Math.round(calculated / step) * step))
+    
+    onChange(snapped.toFixed(1))
+
+    // Debounced Snap/Settle behavior
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+    scrollTimeoutRef.current = setTimeout(() => {
+      const targetScroll = (snapped - min) * tickSpacing
+      container.scrollTo({
+        left: targetScroll,
+        behavior: 'smooth'
+      })
+    }, 150)
   }
+
+  // Generate tick markers
+  const ticks = []
+  for (let i = min; i <= max; i++) {
+    ticks.push(i)
+  }
+
+  return (
+    <div className="space-y-4 py-2 select-none">
+      {/* Live Value Display */}
+      <div className="text-center bg-surface py-2 rounded-xl border border-divider/50">
+        <span className="text-2xl font-extrabold text-primary font-mono">{currentVal.toFixed(1)}</span>
+        <span className="text-sm font-bold text-text-secondary ml-1">kg</span>
+      </div>
+
+      {/* Ruler Container */}
+      <div className="relative bg-surface rounded-2xl border border-divider/50 py-6 overflow-hidden">
+        {/* Center Pointer */}
+        <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-primary z-10 pointer-events-none transform -translate-x-1/2">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent border-t-primary" />
+        </div>
+
+        {/* Scrollable strip */}
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="w-full overflow-x-auto scrollbar-none flex"
+          style={{ scrollbarWidth: 'none' }}
+        >
+          {/* Left Padding: 50% width of parent to center the first tick */}
+          <div className="flex-shrink-0" style={{ width: '50%' }} />
+
+          {/* Ticks Strip */}
+          <div className="flex items-end h-16 relative" style={{ width: `${(max - min) * tickSpacing}px` }}>
+            {ticks.map((t) => {
+              const isMajor = t % 5 === 0
+              const isTens = t % 10 === 0
+              return (
+                <div
+                  key={t}
+                  className="absolute bottom-0 flex flex-col items-center justify-end"
+                  style={{
+                    left: `${(t - min) * tickSpacing}px`,
+                    transform: 'translateX(-50%)',
+                    height: '100%'
+                  }}
+                >
+                  {isMajor && (
+                    <span className={`text-[9px] font-bold font-mono mb-2 ${isTens ? 'text-text-primary' : 'text-text-secondary/70'}`}>
+                      {t}
+                    </span>
+                  )}
+                  <div
+                    className={`w-0.5 rounded-full ${
+                      isTens
+                        ? 'h-6 bg-text-primary'
+                        : isMajor
+                        ? 'h-4 bg-text-secondary/80'
+                        : 'h-2 bg-text-secondary/40'
+                    }`}
+                  />
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Right Padding */}
+          <div className="flex-shrink-0" style={{ width: '50%' }} />
+        </div>
+      </div>
+    </div>
+  )
 }
 
 interface TodayChecklistProps {
   selectedCondition: string
   assignedCoachName?: string
+  customTaskList?: TaskDef[] | null
 }
 
-export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayChecklistProps) {
+export function TodayChecklist({ selectedCondition, assignedCoachName, customTaskList }: TodayChecklistProps) {
   const supabase = createClient()
   const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([])
   const [activeTask, setActiveTask] = useState<TaskDef | null>(null)
   const [rankUpData, setRankUpData] = useState<{ oldTier: TierType; newTier: TierType } | null>(null)
+  // DB-sourced: coach rank_up_quote collected at registration, never from static config
+  const [coachRankUpQuote, setCoachRankUpQuote] = useState<string>('')
   
   // Timer states
   const [timerActive, setTimerActive] = useState(false)
@@ -277,6 +167,11 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
   const [vitalsDiastolic, setVitalsDiastolic] = useState<string>('')
   const [vitalsSugar, setVitalsSugar] = useState<string>('')
   const [vitalsWeight, setVitalsWeight] = useState<string>('')
+  const [vitalsStep, setVitalsStep] = useState<number>(1)
+
+  // New Task Type Framework states
+  const [sliderValue, setSliderValue] = useState<number>(5)
+  const [selectedMcqOption, setSelectedMcqOption] = useState<string>('')
 
   // Trust metrics helpers
   const modalOpenedAt = useRef<number>(0)
@@ -284,12 +179,32 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
   const actionStepTimer = useRef<NodeJS.Timeout | null>(null)
 
   // Get active dataset
-  const dataset = tasksByCondition[selectedCondition] || tasksByCondition['General Fitness']
+  const dataset = useMemo(() => {
+    const staticData = tasksByCondition[selectedCondition] || tasksByCondition['General Fitness']
+    
+    if (customTaskList && customTaskList.length > 0) {
+      const coachIds = ['db_meal_photo', 'ht_salt_shaker_off', 'pc_squat_prep', 'pd_carb_audit', 'gf_step_boost', 'db_meal_photo_easy', 'ht_salt_shaker_off_easy', 'pc_squat_prep_easy', 'pd_carb_audit_easy', 'gf_step_boost_easy']
+      const pathway = customTaskList.filter(t => !coachIds.includes(t.id))
+      const coach = customTaskList.filter(t => coachIds.includes(t.id))
+      return { pathway, coach }
+    }
+    
+    // Cold start for new users: default to easiest pathway
+    const isNewUser = completedTaskIds.length === 0
+    if (isNewUser) {
+      const easyPathway = staticData.pathway.map(simplifyTask)
+      const easyCoach = staticData.coach.map(simplifyTask)
+      return { pathway: easyPathway, coach: easyCoach }
+    }
+    
+    return staticData
+  }, [selectedCondition, customTaskList, completedTaskIds])
   const todayString = new Date().toISOString().split('T')[0]
   
   const defaultCoach = coachesConfig[selectedCondition] || coachesConfig['General Fitness']
+  // Only name is used from the static config here — coach-authored content (intro, rank_up_quote)
+  // is fetched from the DB in the completions effect below.
   const coachName = assignedCoachName || defaultCoach.name
-  const coach = { ...defaultCoach, name: coachName }
 
   // Helper to dynamically format tasks with the current coach name
   const formatTaskText = (text: string | undefined): string => {
@@ -329,6 +244,29 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
 
       if (data) {
         setCompletedTaskIds(data.map(d => d.task_id))
+      }
+
+      // Fetch coach rank_up_quote from DB — not from static config
+      const { data: profile } = await supabase
+        .from('users')
+        .select('coach_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.coach_id) {
+        const { data: dbCoach } = await supabase
+          .from('coaches')
+          .select('rank_up_quote')
+          .eq('id', profile.coach_id)
+          .single()
+        if (dbCoach?.rank_up_quote) {
+          setCoachRankUpQuote(dbCoach.rank_up_quote)
+        } else {
+          console.warn(
+            `[TodayChecklist] Coach ${profile.coach_id} has no rank_up_quote. ` +
+            'Rank-up modal will show a generic line — update the coaches table.'
+          )
+        }
       }
     }
 
@@ -381,8 +319,21 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
     setVitalsSugar('')
     setVitalsWeight('')
 
+    // New Task Type values initialization
+    setSliderValue(task.sliderMin ?? 5)
+    setSelectedMcqOption('')
+
+    if (task.type === 'vitals') {
+      setVitalsStep(1)
+      setVitalsWeight('70.0')
+    }
+
     if (task.type === 'timed') {
       setTimeLeft(task.duration || 15)
+    }
+
+    if (task.type === 'TIMER') {
+      setTimeLeft((task.durationMinutes || 10) * 60)
     }
   }
 
@@ -443,9 +394,15 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
       localStorage.setItem(`streak_choice_${activeTask.id}`, identicalStreak.toString())
     }
 
-    const isRecallCorrect = activeTask.type === 'timed' && selectedRecallIndex !== null
+    let isRecallCorrect = activeTask.type === 'timed' && selectedRecallIndex !== null
       ? selectedRecallIndex === activeTask.recallCorrectIndex
       : null
+
+    if (activeTask.type === 'MCQ') {
+      isRecallCorrect = activeTask.mcqCorrectOption 
+        ? selectedMcqOption === activeTask.mcqCorrectOption 
+        : null
+    }
 
     const payload = {
       task_id: activeTask.id,
@@ -454,13 +411,13 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
       completed_at: new Date(now).toISOString(),
       duration_seconds: actualActiveDuration,
       
-      // Timed tasks
-      recall_question: activeTask.recallQuestion || null,
-      recall_selected: activeTask.recallChoices && selectedRecallIndex !== null ? activeTask.recallChoices[selectedRecallIndex] : null,
+      // Timed tasks / MCQ question
+      recall_question: activeTask.type === 'MCQ' ? activeTask.mcqQuestion : (activeTask.recallQuestion || null),
+      recall_selected: activeTask.type === 'MCQ' ? selectedMcqOption : (activeTask.recallChoices && selectedRecallIndex !== null ? activeTask.recallChoices[selectedRecallIndex] : null),
       recall_correct: isRecallCorrect,
 
-      // Loggable tasks
-      reflective_choice: selectedLogChoice || null,
+      // Loggable tasks / SLIDER
+      reflective_choice: activeTask.type === 'SLIDER' ? String(sliderValue) : (selectedLogChoice || null),
       reflective_text: logFreeText || null,
 
       // Photo tasks
@@ -480,7 +437,7 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
       const systolicVal = selectedCondition === 'Hypertension' ? parseInt(vitalsSystolic, 10) : null
       const diastolicVal = selectedCondition === 'Hypertension' ? parseInt(vitalsDiastolic, 10) : null
       const sugarVal = (selectedCondition === 'Type 2 Diabetes' || selectedCondition === 'Pre-Diabetes') ? parseFloat(vitalsSugar) : null
-      const weightVal = (selectedCondition === 'PCOS' || selectedCondition === 'General Fitness') ? parseFloat(vitalsWeight) : null
+      const weightVal = vitalsWeight ? parseFloat(vitalsWeight) : null
 
       if (isPreview) {
         const savedVitals = localStorage.getItem('preview_vitals_log')
@@ -516,6 +473,15 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
 
     if (isPreview) {
       localStorage.setItem(`completions_${selectedCondition}_${todayString}`, JSON.stringify(nextCompletedIds))
+      
+      const previewHistory = JSON.parse(localStorage.getItem('preview_completions') || '[]')
+      previewHistory.push({
+        task_id: activeTask.id,
+        task_type: activeTask.type,
+        reflective_choice: selectedLogChoice || null,
+        completed_at: new Date().toISOString()
+      })
+      localStorage.setItem('preview_completions', JSON.stringify(previewHistory))
     } else {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
@@ -534,7 +500,8 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
 
     // Award Consistency Points and check for tier progression
     try {
-      const cpResult = await awardConsistencyPoints('daily_checkin', isPreview)
+      const cpSource = activeTask.type === 'vitals' ? 'vitals_checkin' : 'daily_checkin'
+      const cpResult = await awardConsistencyPoints(cpSource, isPreview)
       if (cpResult.tierUpOccurred) {
         setRankUpData({
           oldTier: cpResult.oldTier,
@@ -543,6 +510,16 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
       }
     } catch (err) {
       console.error('Failed to update CP:', err)
+    }
+
+    // Trigger struggle detection signals on completion
+    if (isPreview) {
+      detectStruggle('preview_user_id', true).catch(console.error)
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        detectStruggle(user.id, false).catch(console.error)
+      }
     }
 
     setActiveTask(null)
@@ -650,6 +627,145 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
                 <X className="h-5 w-5 text-text-primary" />
               </button>
             </div>
+
+            {/* FLOW: TIMER TASK */}
+            {activeTask.type === 'TIMER' && (
+              <div className="space-y-4 py-2">
+                {!timerActive && !recallUnlocked ? (
+                  <div className="text-center py-6 space-y-4">
+                    <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#781818]/5 text-[#781818]">
+                      <Timer className="h-8 w-8 text-[#781818]" />
+                    </div>
+                    <p className="text-xs text-text-secondary max-w-xs mx-auto">
+                      This activity requires {activeTask.durationMinutes || 10} minutes of focused attention. Start the timer when you are ready.
+                    </p>
+                    <Button 
+                      variant="primary" 
+                      onClick={startTimedTask}
+                      className="w-full flex items-center justify-center gap-2"
+                    >
+                      <Play className="h-4 w-4 fill-current" />
+                      <span>Start Timer</span>
+                    </Button>
+                  </div>
+                ) : timerActive ? (
+                  <div className="text-center py-8 space-y-4">
+                    <div className="text-4xl font-bold tracking-tight text-text-primary tabular-nums font-mono">
+                      {formatTime(timeLeft)}
+                    </div>
+                    <p className="text-xs text-text-secondary">Keep going! Stay focused...</p>
+                    <div className="flex flex-col items-center space-y-2">
+                      <Button variant="secondary" disabled className="w-full">
+                        Ongoing...
+                      </Button>
+                      {isPreview && (
+                        <button 
+                          onClick={skipTimedTaskTimer} 
+                          className="text-[10px] text-text-secondary/70 hover:text-text-secondary transition-colors underline"
+                        >
+                          Dev Bypass: Skip Timer
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm font-semibold text-text-primary leading-tight text-center">
+                      Time is up! Click complete to save your session.
+                    </p>
+                    <Button
+                      variant="primary"
+                      onClick={handleCompleteTask}
+                      className="w-full"
+                    >
+                      Complete Session
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* FLOW: SLIDER TASK */}
+            {activeTask.type === 'SLIDER' && (
+              <div className="space-y-6 py-2">
+                <div className="space-y-3">
+                  <div className="text-center py-3 bg-[#F8F8F0] rounded-xl border border-divider/50">
+                    <span className="text-3xl font-extrabold text-[#781818] font-mono">{sliderValue}</span>
+                    {activeTask.sliderUnit && (
+                      <span className="text-sm font-bold text-text-secondary ml-1">{activeTask.sliderUnit}</span>
+                    )}
+                  </div>
+                  <input
+                    type="range"
+                    min={activeTask.sliderMin ?? 1}
+                    max={activeTask.sliderMax ?? 10}
+                    step={activeTask.sliderStep ?? 1}
+                    value={sliderValue}
+                    onChange={(e) => setSliderValue(Number(e.target.value))}
+                    className="w-full h-2 bg-[#100808]/10 rounded-lg appearance-none cursor-pointer accent-[#781818]"
+                  />
+                  <div className="flex justify-between text-xs text-text-secondary font-bold font-mono">
+                    <span>Min: {activeTask.sliderMin ?? 1}</span>
+                    <span>Max: {activeTask.sliderMax ?? 10}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider block">
+                    Optional Comments
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={logFreeText}
+                    onChange={(e) => setLogFreeText(e.target.value)}
+                    placeholder="Describe how it went..."
+                    className="w-full rounded-xl border border-divider/50 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:border-[#781818] resize-none"
+                  />
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={handleCompleteTask}
+                  className="w-full"
+                >
+                  Save Log Entry
+                </Button>
+              </div>
+            )}
+
+            {/* FLOW: MCQ TASK */}
+            {activeTask.type === 'MCQ' && (
+              <div className="space-y-4 py-1">
+                <p className="text-sm font-semibold text-text-primary leading-tight">
+                  {activeTask.mcqQuestion || 'Choose one option:'}
+                </p>
+                <div className="space-y-2">
+                  {activeTask.mcqOptions?.map((option: string) => (
+                    <button
+                      key={option}
+                      onClick={() => setSelectedMcqOption(option)}
+                      className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all flex items-center justify-between ${
+                        selectedMcqOption === option
+                          ? 'border-[#781818] bg-[#781818]/5 text-[#781818] font-semibold'
+                          : 'border-divider/50 bg-transparent text-text-primary hover:bg-divider/10'
+                      }`}
+                    >
+                      <span>{option}</span>
+                      {selectedMcqOption === option && <Check className="h-4 w-4 text-[#781818]" />}
+                    </button>
+                  ))}
+                </div>
+
+                <Button
+                  variant="primary"
+                  disabled={!selectedMcqOption}
+                  onClick={handleCompleteTask}
+                  className="w-full"
+                >
+                  Submit Answer
+                </Button>
+              </div>
+            )}
 
             {/* FLOW 1: TIMED TASK */}
             {activeTask.type === 'timed' && (
@@ -835,8 +951,26 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
 
             {/* FLOW 4: VITALS CHECK-IN */}
             {activeTask.type === 'vitals' && (() => {
-              const vitalsError = (() => {
-                if (selectedCondition === 'Hypertension') {
+              const getVitalsSteps = () => {
+                switch (selectedCondition) {
+                  case 'Hypertension':
+                    return ['bp', 'weight']
+                  case 'Type 2 Diabetes':
+                  case 'Pre-Diabetes':
+                    return ['sugar', 'weight']
+                  case 'PCOS':
+                    return ['weight']
+                  case 'General Fitness':
+                  default:
+                    return ['weight']
+                }
+              }
+
+              const steps = getVitalsSteps()
+              const currentStepType = steps[vitalsStep - 1]
+
+              const currentStepError = (() => {
+                if (currentStepType === 'bp') {
                   if (!vitalsSystolic || !vitalsDiastolic) return 'Please enter both readings.'
                   const sys = parseInt(vitalsSystolic, 10)
                   const dia = parseInt(vitalsDiastolic, 10)
@@ -844,12 +978,12 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
                   if (sys < 70 || sys > 250) return 'Systolic BP must be between 70 and 250 mmHg.'
                   if (dia < 40 || dia > 150) return 'Diastolic BP must be between 40 and 150 mmHg.'
                   if (sys <= dia) return 'Systolic must be greater than diastolic.'
-                } else if (selectedCondition === 'Type 2 Diabetes' || selectedCondition === 'Pre-Diabetes') {
+                } else if (currentStepType === 'sugar') {
                   if (!vitalsSugar) return 'Please enter blood sugar level.'
                   const sugar = parseFloat(vitalsSugar)
                   if (isNaN(sugar)) return 'Please enter a valid number.'
                   if (sugar < 30 || sugar > 600) return 'Blood sugar must be between 30 and 600 mg/dL.'
-                } else if (selectedCondition === 'PCOS' || selectedCondition === 'General Fitness') {
+                } else if (currentStepType === 'weight') {
                   if (!vitalsWeight) return 'Please enter body weight.'
                   const weight = parseFloat(vitalsWeight)
                   if (isNaN(weight)) return 'Please enter a valid number.'
@@ -858,11 +992,21 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
                 return null
               })()
 
-              const isVitalsValid = vitalsError === null
+              const isCurrentStepValid = currentStepError === null
+              const isLastStep = vitalsStep === steps.length
 
               return (
                 <div className="space-y-4 py-1">
-                  {selectedCondition === 'Hypertension' && (
+                  <div className="flex items-center justify-between text-[10px] font-bold text-text-secondary uppercase tracking-widest border-b border-divider/40 pb-2">
+                    <span>Vitals Log</span>
+                    {steps.length > 1 && (
+                      <span className="font-mono">
+                        Step {vitalsStep} of {steps.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {currentStepType === 'bp' && (
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider block">
@@ -891,7 +1035,7 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
                     </div>
                   )}
 
-                  {(selectedCondition === 'Type 2 Diabetes' || selectedCondition === 'Pre-Diabetes') && (
+                  {currentStepType === 'sugar' && (
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider block">
                         Fasting Blood Glucose (mg/dL)
@@ -906,62 +1050,52 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
                     </div>
                   )}
 
-                  {selectedCondition === 'PCOS' && (
+                  {currentStepType === 'weight' && (
                     <div className="space-y-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider block">
                           Body Weight (kg)
                         </label>
-                        <input
-                          type="number"
+                        <WeightRuler
                           value={vitalsWeight}
-                          onChange={(e) => setVitalsWeight(e.target.value)}
-                          placeholder="e.g. 68"
-                          className="w-full rounded-xl border border-divider/50 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:border-primary"
+                          onChange={(val: string) => setVitalsWeight(val)}
                         />
                       </div>
-                      {/* 
-                          DOCTOR SYLLABUS PLACEHOLDER FOR PCOS ADDITIONAL METRICS
-                          Pending confirmed requirements from medical advisory team.
-                          Do not add fields (e.g. waist circumference, LH/FSH) without explicit syllabus.
-                      */}
-                      <div className="p-3 bg-divider/10 border border-divider/30 rounded-xl">
-                        <p className="text-[10px] text-text-secondary leading-normal italic">
-                          💡 Additional hormone logs (LH/FSH, insulin ratios) pending confirmed clinical syllabus from medical advisory team.
-                        </p>
-                      </div>
+                      {selectedCondition === 'PCOS' && (
+                        <div className="p-3 bg-divider/10 border border-divider/30 rounded-xl">
+                          <p className="text-[10px] text-text-secondary leading-normal italic">
+                            Additional hormone logs (LH/FSH, insulin ratios) pending confirmed clinical syllabus from medical advisory team.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {selectedCondition === 'General Fitness' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider block">
-                        Body Weight (kg)
-                      </label>
-                      <input
-                        type="number"
-                        value={vitalsWeight}
-                        onChange={(e) => setVitalsWeight(e.target.value)}
-                        placeholder="e.g. 75"
-                        className="w-full rounded-xl border border-divider/50 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  )}
-
-                  {vitalsError && (
+                  {currentStepError && (
                     <p className="text-[10px] font-semibold text-red-500 bg-red-50 border border-red-200/50 rounded-lg p-2.5 leading-normal">
-                      ⚠️ {vitalsError}
+                      Error: {currentStepError}
                     </p>
                   )}
 
-                  <Button
-                    variant="primary"
-                    disabled={!isVitalsValid}
-                    onClick={handleCompleteTask}
-                    className="w-full"
-                  >
-                    Save Vitals Entry
-                  </Button>
+                  {isLastStep ? (
+                    <Button
+                      variant="primary"
+                      disabled={!isCurrentStepValid}
+                      onClick={handleCompleteTask}
+                      className="w-full"
+                    >
+                      Save Vitals Entry
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      disabled={!isCurrentStepValid}
+                      onClick={() => setVitalsStep(prev => prev + 1)}
+                      className="w-full"
+                    >
+                      Next Step
+                    </Button>
+                  )}
                 </div>
               )
             })()}
@@ -990,9 +1124,9 @@ export function TodayChecklist({ selectedCondition, assignedCoachName }: TodayCh
 
             {/* Coach quote card */}
             <div className="rounded-xl bg-surface border border-divider/50 p-4 text-left relative overflow-hidden">
-              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Coach {coach.name} Notes</p>
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Coach {coachName} Notes</p>
               <p className="text-xs text-text-primary italic leading-relaxed mt-1">
-                &ldquo;{coach.rankUpQuote}&rdquo;
+                &ldquo;{coachRankUpQuote || 'Keep up the incredible work. Your consistency is building something real.'}&rdquo;
               </p>
             </div>
 

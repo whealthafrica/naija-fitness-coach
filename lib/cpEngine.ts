@@ -34,7 +34,8 @@ export const CP_SOURCES = {
   coach_call: 25,          // Virtual group coach call attended
   community_reaction: 2,   // Reacting to posts (hard-capped at 3 per day)
   lesson_checkpoint_mid: 5, // Mid-video scenario check (60-70% watched)
-  lesson_checkpoint_end: 10 // End-of-video self-placement (85% watched)
+  lesson_checkpoint_end: 10, // End-of-video self-placement (85% watched)
+  vitals_checkin: 5,       // Daily physiological tracking (blood glucose, blood pressure, weight)
 } as const
 export type CPSourceType = keyof typeof CP_SOURCES
 
@@ -227,11 +228,18 @@ export async function awardConsistencyPoints(
  * - Program Progress < 50%   => Forfeited stake (₦0 returned, stays with NFC)
  * 
  * Bounded by tier cap:
- * - Standard Tier Cap: ₦10,000.00
- * - Premium Tier Cap:  ₦20,000.00
+ * - Standard Tier Cap: ₦10,000.00 (incentive portion of ₦60,000 stake)
+ * - Premium Tier Cap:  ₦20,000.00 (incentive portion of ₦100,000 stake)
  * 
  * Formula: final_payout = MIN(calculated_payout, tier_cap)
- * Manual Review Required: If calculated_payout >= PLACEHOLDER_MANUAL_REVIEW_LIMIT
+ * 
+ * INTEGRITY RULE: Program Progress (which determines Iron Wallet payouts) is calculated
+ * solely from verified program activities. Self-reported health metrics (like blood pressure,
+ * blood sugar, weight) from Vitals Check-Ins are excluded. This prevents giving patients
+ * a direct financial incentive to falsify clinical data.
+ * 
+ * WITHDRAWAL RULE: fully automatic at week 12, NO manual admin review step regardless 
+ * of payout amount. Auto-initiate transfer the moment week 12 hits.
  * =========================================================================
  */
 export function calculateIronWalletPayout(
@@ -249,7 +257,7 @@ export function calculateIronWalletPayout(
     calculatedPayout = 0
   }
 
-  // Enforce tier cap
+  // Enforce tier cap at calculation level
   const finalPayout = Math.min(calculatedPayout, tierCap)
   const forfeit = programProgress < 50
 

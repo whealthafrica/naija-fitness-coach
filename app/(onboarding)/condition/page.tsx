@@ -151,16 +151,14 @@ export default function ConditionPage() {
         }} 
         className="flex-1 flex flex-col justify-between w-full max-w-sm mx-auto mt-6"
       >
-        {/* Cards Grid */}
-        <div className="grid grid-cols-2 gap-4 w-full">
+        {/* MCQ Option Stack */}
+        <div className="flex flex-col gap-3 w-full">
           {conditions.map((item) => {
             const isSelected = selectedCondition === item.id
             const isAnySelected = selectedCondition !== null
             
             // Determine opacity based on whether any card is active
-            const cardOpacity = !isAnySelected ? 1 : isSelected ? 1 : 0.6
-            const isWide = item.id === 'general-fitness'
-            const IconComponent = iconMap[item.id] || Sparkles
+            const cardOpacity = !isAnySelected ? 1 : isSelected ? 1 : 0.7
 
             return (
               <motion.button
@@ -170,29 +168,29 @@ export default function ConditionPage() {
                 disabled={loading}
                 
                 // Scale-up-then-settle transition keyframes
-                animate={isSelected ? { scale: [1, 1.03, 1] } : { scale: 1 }}
-                transition={{ duration: 0.35, ease: ["easeOut", "easeIn"] }}
+                animate={isSelected ? { scale: [1, 1.01, 1] } : { scale: 1 }}
+                transition={{ duration: 0.25 }}
                 
-                // Interpolating card background wash and opacity
-                className={`flex flex-col items-center justify-between rounded-2xl border text-center outline-none transition-all duration-300 p-5 ${
-                  isWide ? 'col-span-2 aspect-[2.2/1]' : 'aspect-square'
-                }`}
+                className="w-full flex items-center justify-between rounded-2xl border outline-none transition-all duration-200 py-4 px-5 text-left"
                 style={{
-                  backgroundColor: isSelected ? '#E8E3CF' : '#FAF4EC', // linen vs sage-wash mix
-                  borderColor: isSelected ? '#9CAF88' : '#E6DCD0',     // sage vs warm-border
+                  backgroundColor: isSelected ? '#7818180F' : '#FAF4EC', // 6% Deep Maroon vs Warm Cream
+                  borderColor: isSelected ? '#781818' : '#E6DCD0',
                   opacity: cardOpacity
                 }}
               >
-                {/* Large Central Illustration */}
-                <div className={`flex items-center justify-center my-auto text-primary ${
-                  isWide ? 'w-24 h-24' : 'w-20 h-20'
-                }`}>
-                  <IconComponent className={`${isWide ? 'h-14 w-14' : 'h-12 w-12'} stroke-[1.25] text-primary`} />
+                <div className="flex items-center space-x-4">
+                  {/* Radio Indicator */}
+                  <div className={`h-5 w-5 rounded-full border flex items-center justify-center transition-all ${
+                    isSelected ? 'border-[#781818]' : 'border-[#100808]/20'
+                  }`}>
+                    {isSelected && (
+                      <div className="h-2.5 w-2.5 rounded-full bg-[#781818]" />
+                    )}
+                  </div>
+                  <span className="font-bold text-sm text-[#100808] tracking-tight">
+                    {item.name}
+                  </span>
                 </div>
-
-                <span className="font-bold text-xs sm:text-sm text-text-primary tracking-tight leading-tight mt-auto">
-                  {item.name}
-                </span>
               </motion.button>
             )
           })}

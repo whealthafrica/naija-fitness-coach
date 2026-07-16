@@ -12,6 +12,11 @@ export interface LessonDef {
   midQuestionOptions?: string[] | null
   midQuestionCorrect?: string | null
   endQuestionText?: string | null
+  midCheckpointPct?: number
+  endCheckpointPct?: number
+  notifyCoachOpt1?: boolean
+  notifyCoachOpt2?: boolean
+  notifyCoachOpt3?: boolean
 }
 
 // 6-Video sequences keyed by focus condition

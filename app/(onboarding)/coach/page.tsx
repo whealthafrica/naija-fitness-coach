@@ -36,7 +36,7 @@ export default async function CoachPage({ searchParams }: PageProps) {
         coachDetails = {
           name: dbCoach.name,
           intro: dbCoach.intro || '',
-          illustration: dbCoach.illustration || '/coach-pcos.png',
+          illustration: dbCoach.illustration || undefined,
           rankUpQuote: dbCoach.rank_up_quote || '',
           code: dbCoach.code
         }
@@ -46,17 +46,16 @@ export default async function CoachPage({ searchParams }: PageProps) {
     }
 
     if (!coachDetails) {
-      const staticCoach = Object.values(coachesConfig).find(
-        (c) => c.name.toLowerCase() === urlCoachCode.toLowerCase()
-      )
-      if (staticCoach) {
-        coachDetails = {
-          name: staticCoach.name,
-          intro: staticCoach.intro,
-          illustration: staticCoach.illustration,
-          rankUpQuote: staticCoach.rankUpQuote,
-          code: urlCoachCode.toLowerCase()
-        }
+      // DB lookup failed to find a coach for this code. Don't fall back to static content —
+      // coach-authored fields (intro, illustration) only exist in the DB.
+      // Render a name-only record; the page will show an error for the missing illustration.
+      const nameGuess = urlCoachCode
+      coachDetails = {
+        name: nameGuess,
+        intro: '', // No DB row — cannot show static intro
+        illustration: '',
+        rankUpQuote: '',
+        code: urlCoachCode.toLowerCase()
       }
     }
   }
@@ -86,12 +85,15 @@ export default async function CoachPage({ searchParams }: PageProps) {
       redirect('/condition')
     }
 
+    // Condition-based fallback: only name is sourced from the static routing map.
+    // intro and rank_up_quote are DB-only fields; the page will show the generic placeholder
+    // if this path is hit (which means the coach hasn't been registered yet).
     const staticCoach = coachesConfig[selectedCondition] || coachesConfig['General Fitness']
     coachDetails = {
       name: staticCoach.name,
-      intro: staticCoach.intro,
-      illustration: staticCoach.illustration,
-      rankUpQuote: staticCoach.rankUpQuote,
+      intro: '', // Not in static config — must come from DB
+      illustration: '',
+      rankUpQuote: '',
       code: staticCoach.name.toLowerCase()
     }
   }
@@ -129,19 +131,10 @@ export default async function CoachPage({ searchParams }: PageProps) {
     let coachId = dbCoaches?.[0]?.id
 
     if (!coachId) {
-      const matchedConfig = Object.values(coachesConfig).find((c) => c.name === coachName)
-      const { data: newCoach } = await supabaseClient
-        .from('coaches')
-        .insert({
-          name: coachName,
-          code: coachCode || coachName.toLowerCase(),
-          intro: matchedConfig?.intro || '',
-          rank_up_quote: matchedConfig?.rankUpQuote || '',
-          illustration: matchedConfig?.illustration || '/coach-pcos.png'
-        })
-        .select('id')
-        .single()
-      coachId = newCoach?.id
+      // Coach doesn't exist in DB. Coaches must be registered through the admin dashboard.
+      // Do not auto-create a bare row with empty content — redirect to condition selection.
+      console.error(`[assignCoach] Coach "${coachName}" not found in DB. Registration required.`)
+      redirect('/condition')
     }
 
     if (coachId) {
@@ -149,6 +142,16 @@ export default async function CoachPage({ searchParams }: PageProps) {
         .from('users')
         .update({ coach_id: coachId })
         .eq('id', user.id)
+
+      // Write a notification record for the coach
+      await supabaseClient
+        .from('coach_notifications')
+        .insert({
+          coach_id: coachId,
+          type: 'new_client',
+          patient_id: user.id,
+          unread: true
+        })
     }
 
     revalidatePath('/')
@@ -186,17 +189,29 @@ export default async function CoachPage({ searchParams }: PageProps) {
       </div>
 
       {/* Lower Portion: Full-bleed Portrait Illustration */}
-      <div className="w-full flex-1 relative overflow-hidden bg-transparent mt-auto">
-        <Image
-          src={coachDetails.illustration}
-          alt={`Coach ${coachDetails.name} Portrait`}
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover object-top"
-        />
-        {/* Soft fading overlay to blend the top edge of the cover illustration */}
-        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background via-background/50 to-transparent pointer-events-none" />
+      <div className="w-full flex-1 relative overflow-hidden bg-transparent mt-auto flex items-center justify-center">
+        {coachDetails.illustration ? (
+          <>
+            <Image
+              src={coachDetails.illustration}
+              alt={`Coach ${coachDetails.name} Portrait`}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover object-top"
+            />
+            {/* Soft fading overlay to blend the top edge of the cover illustration */}
+            <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background via-background/50 to-transparent pointer-events-none" />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-red-50 flex flex-col items-center justify-center p-6 text-center select-none">
+            <span className="text-red-600 font-extrabold text-sm uppercase tracking-wider block mb-2">Data Error: Incomplete Profile</span>
+            <p className="text-xs text-red-800 leading-relaxed max-w-xs">
+              This coach profile does not have an illustration configured. Please contact the administrator.
+            </p>
+            <script dangerouslySetInnerHTML={{ __html: `console.error("Data integrity error: Coach ${coachDetails.name} has no illustration URL configured in database.");` }} />
+          </div>
+        )}
       </div>
     </div>
   )

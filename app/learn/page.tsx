@@ -5,10 +5,15 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Check, X, Award, Loader2, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { VideoThumbnail } from '@/components/VideoThumbnail'
-import { awardConsistencyPoints, TierType } from '@/lib/cpEngine'
-import { coachesConfig } from '@/lib/coaches'
-import { conditionPathways, generalLibraryLessons, LessonDef } from '@/lib/learningPaths'
+import { awardConsistencyPoints, TierType } from '../../lib/cpEngine'
+import { conditionPathways, generalLibraryLessons, LessonDef } from '../../lib/learningPaths'
+import { 
+  calculateRolling14DayCompletion, 
+  isEligibleForProgression, 
+  scoreAndSortLessonsForProgression 
+} from '../../lib/progressiveEscalation'
 import { createClient } from '@/utils/supabase/client'
+import { getAssignedCoach } from '../../lib/coachResolver'
 
 interface QuestionDef {
   id: string
@@ -27,11 +32,18 @@ export default function LearnPage() {
   const [completedPathwayIndices, setCompletedPathwayIndices] = useState<number[]>([])
   const [completedGenLessonIds, setCompletedGenLessonIds] = useState<string[]>([])
   const [coachName, setCoachName] = useState('Adaeze')
+  const [assignedCoachId, setAssignedCoachId] = useState<string | null>(null)
+  // DB-sourced: coach.rank_up_quote collected at registration, not from static config
+  const [coachRankUpQuote, setCoachRankUpQuote] = useState<string>('')
 
   // Dynamic Lessons & Questions states
   const [pathwayLessons, setPathwayLessons] = useState<LessonDef[]>([])
   const [generalLibraryLessonsList, setGeneralLibraryLessonsList] = useState<LessonDef[]>([])
   const [questionsMap, setQuestionsMap] = useState<Record<string, QuestionDef>>({})
+
+  // Progressive Escalation state
+  const [rolling14DayCompletion, setRolling14DayCompletion] = useState(0)
+  const [isEligibleForAdvanced, setIsEligibleForAdvanced] = useState(false)
 
   // Playback/Modal states
   const [selectedVideo, setSelectedVideo] = useState<LessonDef | null>(null)
@@ -50,6 +62,9 @@ export default function LearnPage() {
   // YouTube references
   const playerRef = useRef<any>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const maxWatchedTimeRef = useRef<number>(0)
+  const midCheckpointMetRef = useRef<boolean>(false)
+  const endCheckpointMetRef = useRef<boolean>(false)
 
   // Load user data, custom configurations, and completions
   useEffect(() => {
@@ -74,7 +89,17 @@ export default function LearnPage() {
       'Pre-Diabetes': 'Emeka',
       'General Fitness': 'Amara'
     }
-    setCoachName(coachMap[condition] || 'Adaeze')
+
+    const resolveCoach = async (userId: string | undefined, cond: string) => {
+      const dbCoach = await getAssignedCoach(supabase, userId, cond)
+      if (dbCoach) {
+        setCoachName(dbCoach.name)
+        setCoachRankUpQuote(dbCoach.rankUpQuote)
+      } else {
+        setCoachName(coachMap[cond] || 'Adaeze')
+        setCoachRankUpQuote('')
+      }
+    }
 
     // 1. Load Completed states
     if (isPreview) {
@@ -86,32 +111,37 @@ export default function LearnPage() {
 
       // Load dynamic lessons & questions from client cache
       loadDynamicLessons(condition)
+      resolveCoach(undefined, condition)
     } else {
       const loadProfileAndCompletions = async () => {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // Fetch user condition
+        // Fetch user condition and coach_id
         const { data: profile } = await supabase
           .from('users')
-          .select('condition')
+          .select('condition, coach_id')
           .eq('id', user.id)
           .single()
 
         const userCondition = profile?.condition || 'Hypertension'
         setSelectedCondition(userCondition)
-        setCoachName(coachMap[userCondition] || 'Adaeze')
+        if (profile?.coach_id) {
+          setAssignedCoachId(profile.coach_id)
+        }
+        await resolveCoach(user.id, userCondition)
 
-        // Fetch completions
+        // Fetch completions (with timestamps for rolling 14-day calculation)
         const { data: completions } = await supabase
           .from('task_completions')
-          .select('task_id')
+          .select('task_id, completed_at')
           .eq('user_id', user.id)
 
         if (completions) {
           const pathPrefix = `learn_path_${userCondition}_`
           const indices: number[] = []
           const genIds: string[] = []
+          const completedDates: Date[] = []
 
           completions.forEach(c => {
             if (c.task_id.startsWith(pathPrefix)) {
@@ -121,10 +151,24 @@ export default function LearnPage() {
             } else if (c.task_id.startsWith('gen_lesson_') || c.task_id.startsWith('custom_lesson_')) {
               genIds.push(c.task_id)
             }
+            
+            // Collect all completion dates for rolling 14-day calculation
+            if (c.completed_at) {
+              completedDates.push(new Date(c.completed_at))
+            }
           })
+
+          // Calculate rolling 14-day completion rate
+          // Assume tasks assigned follows standard daily rhythm; adjust divisor if needed
+          const tasksPerDay = 1.5 // Conservative estimate based on typical task load
+          const totalExpectedInPeriod = tasksPerDay * 14
+          const rolling14Day = calculateRolling14DayCompletion(completedDates, Math.ceil(totalExpectedInPeriod))
+          const isAdvancedEligible = isEligibleForProgression(rolling14Day)
 
           setCompletedPathwayIndices(indices)
           setCompletedGenLessonIds(genIds)
+          setRolling14DayCompletion(rolling14Day)
+          setIsEligibleForAdvanced(isAdvancedEligible)
         }
 
         // Fetch from dynamic tables
@@ -208,7 +252,11 @@ export default function LearnPage() {
       })
 
       setPathwayLessons(combinedPath)
-      setGeneralLibraryLessonsList(combinedGen)
+      
+      // Apply progressive escalation weighting to General Library
+      const escalatedGen = scoreAndSortLessonsForProgression(combinedGen, isEligibleForAdvanced)
+        .map((item: { lesson: LessonDef; score: number }) => item.lesson)
+      setGeneralLibraryLessonsList(escalatedGen)
 
       // Map questions
       const qMap: Record<string, QuestionDef> = {}
@@ -260,11 +308,16 @@ export default function LearnPage() {
                   midQuestionText: l.mid_question_text,
                   midQuestionOptions: parsedOptions,
                   midQuestionCorrect: l.mid_question_correct,
-                  endQuestionText: l.end_question_text
+                  endQuestionText: l.end_question_text,
+                  midCheckpointPct: l.mid_checkpoint_pct,
+                  endCheckpointPct: l.end_checkpoint_pct,
+                  notifyCoachOpt1: l.notify_coach_opt_1,
+                  notifyCoachOpt2: l.notify_coach_opt_2,
+                  notifyCoachOpt3: l.notify_coach_opt_3
                 })
               })
           : (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
-
+ 
         const finalGen = useDbLessons
           ? dbLessons
               .filter(l => l.condition !== condition || l.position_index === null)
@@ -289,13 +342,22 @@ export default function LearnPage() {
                   midQuestionText: l.mid_question_text,
                   midQuestionOptions: parsedOptions,
                   midQuestionCorrect: l.mid_question_correct,
-                  endQuestionText: l.end_question_text
+                  endQuestionText: l.end_question_text,
+                  midCheckpointPct: l.mid_checkpoint_pct,
+                  endCheckpointPct: l.end_checkpoint_pct,
+                  notifyCoachOpt1: l.notify_coach_opt_1,
+                  notifyCoachOpt2: l.notify_coach_opt_2,
+                  notifyCoachOpt3: l.notify_coach_opt_3
                 })
               })
           : generalLibraryLessons.map(addHeuristicQuestionsToLesson)
 
         setPathwayLessons(finalPath)
-        setGeneralLibraryLessonsList(finalGen)
+        
+        // Apply progressive escalation weighting to General Library
+        const escalatedFinalGen = scoreAndSortLessonsForProgression(finalGen, isEligibleForAdvanced)
+          .map((item: { lesson: LessonDef; score: number }) => item.lesson)
+        setGeneralLibraryLessonsList(escalatedFinalGen)
 
         // Map questions
         const qMap: Record<string, QuestionDef> = {}
@@ -313,8 +375,15 @@ export default function LearnPage() {
         setQuestionsMap(qMap)
       } catch (err) {
         console.error('Failed to load lessons from DB, falling back to static lists:', err)
-        setPathwayLessons((conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson))
-        setGeneralLibraryLessonsList(generalLibraryLessons.map(addHeuristicQuestionsToLesson))
+        const staticPath = (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
+        const staticGen = generalLibraryLessons.map(addHeuristicQuestionsToLesson)
+        
+        setPathwayLessons(staticPath)
+        
+        // Apply progressive escalation to fallback as well
+        const escalatedStaticGen = scoreAndSortLessonsForProgression(staticGen, isEligibleForAdvanced)
+          .map((item: { lesson: LessonDef; score: number }) => item.lesson)
+        setGeneralLibraryLessonsList(escalatedStaticGen)
       }
     }
   }
@@ -362,17 +431,33 @@ export default function LearnPage() {
   const startPollingProgress = () => {
     stopPollingProgress()
     pollIntervalRef.current = setInterval(() => {
-      if (!playerRef.current || !playerRef.current.getCurrentTime || !playerRef.current.getDuration) return
+      if (!selectedVideo || !playerRef.current || !playerRef.current.getCurrentTime || !playerRef.current.getDuration) return
 
       const currentTime = playerRef.current.getCurrentTime()
       const duration = playerRef.current.getDuration()
 
       if (duration > 0) {
+        // CODE COMMENT: Seek-forward restriction to prevent bypassing 65%/85% checkpoints.
+        // If the user attempts to seek forward past the maximum watched point, snap them back.
+        // Bypassed in dev/preview environments for testing convenience.
+        const isProduction = process.env.NODE_ENV === 'production' && !isPreview
+        if (isProduction && currentTime > maxWatchedTimeRef.current + 3) {
+          playerRef.current.seekTo(maxWatchedTimeRef.current, true)
+          return
+        } else {
+          maxWatchedTimeRef.current = Math.max(maxWatchedTimeRef.current, currentTime)
+        }
+
         const progress = currentTime / duration
         setWatchProgress(progress)
 
-        // Checkpoint 1: Mid-Video Scenario at 60-70% (e.g. >= 65%)
-        if (progress >= 0.65 && progress < 0.80 && !midCheckpointMet) {
+        const midPct = selectedVideo.midCheckpointPct ?? 65
+        const endPct = selectedVideo.endCheckpointPct ?? 85
+        const midFraction = midPct / 100
+        const endFraction = endPct / 100
+
+        // Checkpoint 1: Configurable Scenario checkpoint
+        if (progress >= midFraction && progress < (endFraction - 0.05) && !midCheckpointMetRef.current) {
           if (playerRef.current && playerRef.current.pauseVideo) {
             playerRef.current.pauseVideo()
           }
@@ -382,8 +467,8 @@ export default function LearnPage() {
           setSelectedAnswer(null)
           setIsAnswerSubmitted(false)
         }
-        // Checkpoint 2: End-of-Video self-placement at 85%
-        else if (progress >= 0.85 && midCheckpointMet && !endCheckpointMet) {
+        // Checkpoint 2: Configurable End-of-Video self-placement checkpoint
+        else if (progress >= endFraction && midCheckpointMetRef.current && !endCheckpointMetRef.current) {
           if (playerRef.current && playerRef.current.pauseVideo) {
             playerRef.current.pauseVideo()
           }
@@ -479,6 +564,7 @@ export default function LearnPage() {
         logCheckpointCompletion(selectedVideo.id, 'lesson_checkpoint_mid', selectedVideo.midQuestionText || '', selectedAnswer, true)
         awardPointsForCheckpoint('lesson_checkpoint_mid')
         setMidCheckpointMet(true)
+        midCheckpointMetRef.current = true
 
         setTimeout(() => {
           setShowRecallCheck(false)
@@ -498,6 +584,50 @@ export default function LearnPage() {
       logCheckpointCompletion(selectedVideo.id, 'lesson_checkpoint_end', selectedVideo.endQuestionText || '', selectedAnswer, true)
       awardPointsForCheckpoint('lesson_checkpoint_end')
       setEndCheckpointMet(true)
+      endCheckpointMetRef.current = true
+
+      // Check and trigger coach notification if option is configured
+      const optionIndex = [
+        "I already do this",
+        "I will not do this / I can't do this",
+        "I will do this starting tomorrow"
+      ].indexOf(selectedAnswer)
+
+      let shouldNotify = false
+      if (optionIndex === 0 && selectedVideo.notifyCoachOpt1) shouldNotify = true
+      if (optionIndex === 1 && (selectedVideo.notifyCoachOpt2 !== false)) shouldNotify = true
+      if (optionIndex === 2 && (selectedVideo.notifyCoachOpt3 !== false)) shouldNotify = true
+
+      if (shouldNotify) {
+        if (isPreview) {
+          const localNotifs = JSON.parse(localStorage.getItem('preview_coach_notifications') || '[]')
+          localNotifs.push({
+            id: `notif_${Date.now()}`,
+            coach_id: 'adaeze-mock-id',
+            type: 'task_choice_alert',
+            patient_id: 'preview-patient-id',
+            patient_name: 'Patient User',
+            lesson_title: selectedVideo.title,
+            selected_choice: selectedAnswer,
+            unread: true,
+            created_at: new Date().toISOString()
+          })
+          localStorage.setItem('preview_coach_notifications', JSON.stringify(localNotifs))
+        } else {
+          supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user && assignedCoachId) {
+              supabase.from('coach_notifications').insert({
+                coach_id: assignedCoachId,
+                type: 'task_choice_alert',
+                patient_id: user.id,
+                unread: true
+              }).then(({ error }) => {
+                if (error) console.error('Error creating coach notification:', error)
+              })
+            }
+          })
+        }
+      }
 
       if (activePathwayIndex !== null) {
         if (!completedPathwayIndices.includes(activePathwayIndex)) {
@@ -597,14 +727,16 @@ export default function LearnPage() {
     }
   }
 
-  const coach = coachesConfig[selectedCondition] || coachesConfig['General Fitness']
+  // coachesConfig is only referenced here for the condition-routing name in the preview path.
+  // Coach-authored content (intro, rank_up_quote) must come from the DB (see fetchCoachFromDB above).
+  const coachDisplayName = coachName
 
   return (
     <div className="space-y-8 pb-12">
       <header className="space-y-1 py-4">
         <p className="text-xs font-semibold uppercase tracking-widest text-text-secondary font-mono">Education</p>
         <h1 className="text-3xl font-bold tracking-tight text-text-primary">Knowledge Hub</h1>
-        <p className="text-sm text-text-secondary">Watch short educational classes curated by Coach {coach.name}.</p>
+        <p className="text-sm text-text-secondary">Watch short educational classes curated by Coach {coachDisplayName}.</p>
       </header>
 
       {/* 1. Condition-Specific Pathway Section */}
@@ -632,6 +764,9 @@ export default function LearnPage() {
                         setSelectedVideo(lesson)
                         setActivePathwayIndex(index)
                         setWatchProgress(0)
+                        maxWatchedTimeRef.current = 0
+                        midCheckpointMetRef.current = false
+                        endCheckpointMetRef.current = false
                         setShowRecallCheck(false)
                         setSelectedAnswer(null)
                         setIsAnswerSubmitted(false)
@@ -702,6 +837,9 @@ export default function LearnPage() {
                   setSelectedVideo(lesson)
                   setActivePathwayIndex(null)
                   setWatchProgress(0)
+                  maxWatchedTimeRef.current = 0
+                  midCheckpointMetRef.current = false
+                  endCheckpointMetRef.current = false
                   setShowRecallCheck(false)
                   setSelectedAnswer(null)
                   setIsAnswerSubmitted(false)
@@ -749,54 +887,69 @@ export default function LearnPage() {
           <div className="bg-surface w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl border border-divider/50 flex flex-col animate-in zoom-in-95 duration-200">
             
             {/* Modal Title Bar */}
-            <div className="p-4 border-b border-divider/40 flex items-center justify-between">
-              <div>
-                <span className="text-[9px] font-semibold text-text-secondary uppercase tracking-widest block font-mono">
-                  {selectedVideo.section}
-                </span>
-                <h3 className="text-sm font-bold text-text-primary mt-0.5 leading-snug">
-                  {selectedVideo.title}
-                </h3>
+            {!showRecallCheck && (
+              <div className="p-4 border-b border-divider/40 flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] font-semibold text-text-secondary uppercase tracking-widest block font-mono">
+                    {selectedVideo.section}
+                  </span>
+                  <h3 className="text-sm font-bold text-text-primary mt-0.5 leading-snug">
+                    {selectedVideo.title}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    stopPollingProgress()
+                    setSelectedVideo(null)
+                  }}
+                  className="p-1 rounded-full hover:bg-divider/50 transition-colors"
+                >
+                  <X className="h-5 w-5 text-text-primary" />
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  stopPollingProgress()
-                  setSelectedVideo(null)
-                }}
-                className="p-1 rounded-full hover:bg-divider/50 transition-colors"
-              >
-                <X className="h-5 w-5 text-text-primary" />
-              </button>
-            </div>
+            )}
 
             {/* Video Player Frame Container */}
-            <div className="aspect-video w-full bg-text-primary relative flex items-center justify-center">
+            <div className={`w-full bg-text-primary relative flex flex-col items-center justify-center transition-all duration-200 ${
+              showRecallCheck ? 'min-h-[290px] sm:min-h-[320px]' : 'aspect-video'
+            }`}>
               <div id="inline-youtube-player" className="absolute inset-0 h-full w-full" />
               
               {/* Question Screen Overlay (Locks screen until answered) */}
               {showRecallCheck && (
-                <div className="absolute inset-0 bg-surface/95 backdrop-blur-sm p-6 flex flex-col justify-between overflow-y-auto z-10 animate-in fade-in duration-200">
-                  <div className="space-y-4">
+                <div className="absolute inset-0 bg-surface/95 backdrop-blur-sm p-4 sm:p-5 flex flex-col justify-between overflow-y-auto z-10 animate-in fade-in duration-200">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2 text-primary">
-                        <HelpCircle className="h-5 w-5 stroke-[1.5]" />
+                        <HelpCircle className="h-4 w-4 stroke-[1.5]" />
                         <span className="text-[10px] font-bold text-text-secondary uppercase tracking-wider font-mono">
                           {checkpointType === 'mid' ? 'Checkpoint 1: Scenario Quiz' : 'Checkpoint 2: Self-Reflection'}
                         </span>
                       </div>
-                      <span className="text-[10px] font-bold text-accent font-mono">
-                        {checkpointType === 'mid' ? '+5 CP' : '+10 CP'}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] font-bold text-accent font-mono">
+                          {checkpointType === 'mid' ? '+5 CP' : '+10 CP'}
+                        </span>
+                        <button
+                          onClick={() => {
+                            stopPollingProgress()
+                            setSelectedVideo(null)
+                          }}
+                          className="p-1 rounded-full hover:bg-divider/20 transition-colors"
+                        >
+                          <X className="h-4 w-4 text-text-primary" />
+                        </button>
+                      </div>
                     </div>
 
-                    <h3 className="text-sm font-bold text-text-primary leading-snug">
+                    <h3 className="text-xs sm:text-sm font-bold text-text-primary leading-snug">
                       {checkpointType === 'mid' ? selectedVideo.midQuestionText : selectedVideo.endQuestionText}
                     </h3>
                     
-                    <div className="space-y-2 mt-4">
+                    <div className="space-y-1.5 mt-2">
                       {(checkpointType === 'mid' 
                         ? (selectedVideo.midQuestionOptions || []) 
-                        : ['I will try this tomorrow', 'I already do this', 'I need to talk to my coach', 'I am not sure yet']
+                        : ['I already do this', 'I will not do this / I can\'t do this', 'I will do this starting tomorrow']
                       ).map((option) => {
                         const isSelected = selectedAnswer === option
                         const isCorrect = checkpointType === 'mid' 
@@ -809,7 +962,7 @@ export default function LearnPage() {
                             type="button"
                             disabled={isAnswerSubmitted}
                             onClick={() => setSelectedAnswer(option)}
-                            className={`w-full p-3 rounded-xl border text-xs font-semibold text-left transition-all ${
+                            className={`w-full p-2.5 rounded-xl border text-xs font-semibold text-left transition-all ${
                               isAnswerSubmitted 
                                 ? isCorrect
                                   ? 'bg-success/15 border-success text-success'
@@ -828,21 +981,21 @@ export default function LearnPage() {
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-divider flex flex-col space-y-2">
+                  <div className="pt-3 border-t border-divider flex flex-col space-y-2">
                     {isAnswerSubmitted ? (
                       <p className="text-[10px] font-bold text-center uppercase tracking-wider text-text-secondary animate-pulse">
                         {checkpointType === 'mid'
                           ? selectedAnswer === selectedVideo.midQuestionCorrect
-                            ? '🌟 Excellent! Correct answer. Resuming video...'
-                            : '⚠️ Incorrect answer. Please try again!'
-                          : '👍 Thank you for reflecting! Completing lesson...'}
+                            ? 'Excellent! Correct answer. Resuming video...'
+                            : 'Incorrect answer. Please try again!'
+                          : 'Thank you for reflecting! Completing lesson...'}
                       </p>
                     ) : (
                       <Button
                         variant="primary"
                         onClick={handleRecallAnswerSubmit}
                         disabled={!selectedAnswer}
-                        className="w-full"
+                        className="w-full py-2 text-xs"
                       >
                         Submit Answer
                       </Button>
@@ -856,8 +1009,7 @@ export default function LearnPage() {
             {!showRecallCheck && (
               <div className="p-4 bg-background/50 border-t border-divider/40 flex flex-col space-y-3">
                 <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
-                  <span>Watch Milestones</span>
-                  <span>Current: {Math.min(100, Math.round(watchProgress * 100))}%</span>
+                  <span>Watch Progress</span>
                 </div>
                 
                 <div className="h-1.5 w-full bg-divider/60 rounded-full overflow-hidden relative">
@@ -868,24 +1020,15 @@ export default function LearnPage() {
                   {/* Mid check dot */}
                   <div 
                     className={`absolute top-0 bottom-0 w-1.5 rounded-full ${midCheckpointMet ? 'bg-success' : 'bg-text-secondary/50'}`}
-                    style={{ left: '65%' }}
+                    style={{ left: `${selectedVideo.midCheckpointPct ?? 65}%` }}
                     title="Mid-video scenario"
                   />
                   {/* End check dot */}
                   <div 
                     className={`absolute top-0 bottom-0 w-1.5 rounded-full ${endCheckpointMet ? 'bg-success' : 'bg-text-secondary/50'}`}
-                    style={{ left: '85%' }}
+                    style={{ left: `${selectedVideo.endCheckpointPct ?? 85}%` }}
                     title="End-of-video reflection"
                   />
-                </div>
-
-                <div className="flex justify-between text-[9px] font-semibold uppercase text-text-secondary font-mono">
-                  <span className={midCheckpointMet ? 'text-success' : ''}>
-                    Checkpoint 1 (65%): {midCheckpointMet ? '✅ PASSED (+5 CP)' : '🔒 PENDING'}
-                  </span>
-                  <span className={endCheckpointMet ? 'text-success' : ''}>
-                    Checkpoint 2 (85%): {endCheckpointMet ? '✅ PASSED (+10 CP)' : '🔒 PENDING'}
-                  </span>
                 </div>
 
                 {(activePathwayIndex !== null ? completedPathwayIndices.includes(activePathwayIndex) : completedGenLessonIds.includes(selectedVideo.id)) ? (
@@ -894,7 +1037,7 @@ export default function LearnPage() {
                   </p>
                 ) : (
                   <p className="text-[9px] text-text-secondary leading-normal text-center mt-1">
-                    Keep this window open. Watch progress must pass the 65% and 85% milestones to complete the lesson.
+                    Keep this window open and watch to the end to complete the lesson.
                   </p>
                 )}
               </div>
@@ -921,12 +1064,14 @@ export default function LearnPage() {
               </p>
             </div>
 
-            <div className="rounded-2xl bg-surface border border-divider p-4 text-left relative overflow-hidden">
-              <p className="text-xs font-semibold text-accent uppercase tracking-wider">Coach {coach.name} Notes</p>
-              <p className="text-xs text-text-primary italic leading-relaxed mt-1">
-                &ldquo;{coach.rankUpQuote}&rdquo;
-              </p>
-            </div>
+            {coachRankUpQuote && (
+              <div className="rounded-2xl bg-surface border border-divider p-4 text-left relative overflow-hidden">
+                <p className="text-xs font-semibold text-accent uppercase tracking-wider">Coach {coachDisplayName} Notes</p>
+                <p className="text-xs text-text-primary italic leading-relaxed mt-1">
+                  &ldquo;{coachRankUpQuote}&rdquo;
+                </p>
+              </div>
+            )}
 
             <Button
               variant="primary"

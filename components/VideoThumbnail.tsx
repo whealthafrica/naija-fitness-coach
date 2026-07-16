@@ -43,10 +43,14 @@ export function VideoThumbnail({
         className="absolute inset-0 h-full w-full object-cover"
       />
 
-      {/* Canonical tone-down overlay — bg-black/15 desaturates aggressive
-          clickbait thumbnails without hiding content. Applied to every
-          YouTube card automatically via this component. */}
-      <div className="absolute inset-0 bg-black/15" />
+      {/* 
+          CODE COMMENT: This overlay has regressed twice. It must remain part of the 
+          core structure of the VideoThumbnail component and not be made conditional or optional.
+          Canonical tone-down overlay — desaturates aggressive clickbait thumbnails 
+          without hiding content. Applied to every YouTube card automatically.
+      */}
+      <div className="absolute inset-0 bg-[#100808]/15" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#100808]/50 via-[#100808]/10 to-transparent pointer-events-none" />
 
       {isLocked ? (
         /* Lock state: additional darkening + blur over the base overlay */

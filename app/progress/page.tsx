@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react'
 import { Calendar, Award, FileText, X, Check, Heart, ShieldAlert } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { Button } from '@/components/Button'
-import { StatsOverviewCards } from '@/components/StatsOverviewCards'
+import { ConsistencyLeagueCard, CommitmentWalletRow } from '@/components/StatsOverviewCards'
 
 export default function ProgressPage() {
   const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
@@ -144,8 +144,8 @@ export default function ProgressPage() {
         <p className="text-sm text-text-secondary">Reflecting consistency and daily check-ins.</p>
       </header>
 
-      {/* Dynamic CP & Wallet visual separation */}
-      <StatsOverviewCards />
+      {/* Consistency League Card */}
+      <ConsistencyLeagueCard />
 
       {/* 28-day Rolling Calendar Dot History Grid */}
       <section className="space-y-3">
@@ -174,6 +174,9 @@ export default function ProgressPage() {
           </div>
         </div>
       </section>
+
+      {/* Commitment Wallet Row */}
+      <CommitmentWalletRow />
 
       {/* Clinical Data Section (Tucked behind tap) */}
       <section className="space-y-2">

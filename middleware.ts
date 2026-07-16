@@ -37,13 +37,14 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           )
         },
+
       },
     }
   )
@@ -51,18 +52,18 @@ export async function middleware(request: NextRequest) {
   // 1. Get authenticated user
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isOnboardingPage =
-    pathname === '/sign-in' ||
-    pathname === '/email' ||
-    pathname === '/phone' ||
-    pathname === '/verify' ||
-    pathname === '/verified' ||
-    pathname === '/condition' ||
-    pathname === '/coach'
-
   // Scenario A: User is not authenticated
   if (!user) {
-    // Allow entry points for signing in
+    if (pathname === '/coach/login') {
+      return response
+    }
+    if (pathname.startsWith('/coach/')) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/coach/login'
+      return NextResponse.redirect(url)
+    }
+
+    // Allow patient entry points for signing in
     if (
       pathname === '/sign-in' ||
       pathname === '/email' ||
@@ -81,13 +82,46 @@ export async function middleware(request: NextRequest) {
   // Query their profile state directly from Supabase
   const { data: profile } = await supabase
     .from('users')
-    .select('phone, condition, coach_id')
+    .select('phone, condition, coach_id, role')
     .eq('id', user.id)
     .single()
+
+  const isCoachOrAdmin = profile?.role === 'coach' || profile?.role === 'superadmin'
+
+  if (isCoachOrAdmin) {
+    if (pathname.startsWith('/coach/')) {
+      if (pathname === '/coach/login') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/coach/dashboard'
+        return NextResponse.redirect(url)
+      }
+      return response
+    }
+    // Redirect coach/admin trying to visit patient app to coach dashboard
+    const url = request.nextUrl.clone()
+    url.pathname = '/coach/dashboard'
+    return NextResponse.redirect(url)
+  }
+
+  // User is a patient
+  if (pathname.startsWith('/coach/') && pathname !== '/coach/login') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    return NextResponse.redirect(url)
+  }
 
   const hasPhone = profile?.phone && profile.phone !== ''
   const hasCondition = profile?.condition && profile.condition !== ''
   const hasCoach = profile?.coach_id && profile.coach_id !== null
+
+  const isOnboardingPage =
+    pathname === '/sign-in' ||
+    pathname === '/email' ||
+    pathname === '/phone' ||
+    pathname === '/verify' ||
+    pathname === '/verified' ||
+    pathname === '/condition' ||
+    pathname === '/coach'
 
   // 2. Strict Onboarding Sequential Redirects
   if (!hasPhone) {

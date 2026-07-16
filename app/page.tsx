@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { createClient } from '@/utils/supabase/server'
 import { coachesConfig } from '@/lib/coaches'
 import { TodayChecklist } from '@/components/TodayChecklist'
+import { getAssignedCoach } from '@/lib/coachResolver'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,68 +19,58 @@ export default async function TodayPage() {
     selectedCondition = decodeURIComponent(previewCookie)
   }
 
-  let coach: { name: string; intro: string; illustration: string; rankUpQuote: string } | null = null
+  let coach: { name: string; intro: string; illustration?: string; rankUpQuote: string } | null = null
 
   const supabase = createClient(cookieStore)
   const { data: { user } } = await supabase.auth.getUser()
 
-  // A. Check for cookie-based assigned coach
-  if (assignedCoachName) {
-    const staticCoach = Object.values(coachesConfig).find(c => c.name === assignedCoachName)
-    if (staticCoach) {
-      coach = {
-        name: staticCoach.name,
-        intro: staticCoach.intro,
-        illustration: staticCoach.illustration,
-        rankUpQuote: staticCoach.rankUpQuote
-      }
-    }
-  }
+  let customTaskList: any[] | null = null
 
-  // B. Check for database profile coach relation
-  if (!coach && user) {
+  // B. Check for database profile
+  if (user) {
     const { data: profile } = await supabase
       .from('users')
       .select('condition, coach_id')
       .eq('id', user.id)
       .single()
     
-    if (profile?.coach_id) {
-      try {
-        const { data: dbCoach } = await supabase
-          .from('coaches')
-          .select('*')
-          .eq('id', profile.coach_id)
-          .single()
-        
-        if (dbCoach) {
-          coach = {
-            name: dbCoach.name,
-            intro: dbCoach.intro || '',
-            illustration: dbCoach.illustration || '/coach-pcos.png',
-            rankUpQuote: dbCoach.rank_up_quote || ''
-          }
-        }
-      } catch {
-        // Fallback gracefully on query error
-      }
-    }
-
     if (profile?.condition) {
       selectedCondition = profile.condition
     }
-  }
 
-  // C. Fallback to condition mapping if no specific coach is assigned
-  if (!coach) {
-    const staticCoach = coachesConfig[selectedCondition] || coachesConfig['General Fitness']
-    coach = {
-      name: staticCoach.name,
-      intro: staticCoach.intro,
-      illustration: staticCoach.illustration,
-      rankUpQuote: staticCoach.rankUpQuote
+    // Fetch custom task list override if it exists
+    const { data: pathwayState } = await supabase
+      .from('patient_pathway_state')
+      .select('custom_task_list')
+      .eq('user_id', user.id)
+      .single()
+    if (pathwayState?.custom_task_list) {
+      customTaskList = pathwayState.custom_task_list as any[]
     }
   }
+
+  // B2. Resolve coach details from database via shared helper
+  const dbCoachResolved = await getAssignedCoach(supabase, user?.id, selectedCondition)
+  if (dbCoachResolved) {
+    coach = dbCoachResolved
+  }
+
+  // C. Fallback to condition mapping if no specific coach is resolved from DB.
+  if (!coach) {
+    const staticCoach = coachesConfig[selectedCondition] || coachesConfig['General Fitness']
+    console.warn(
+      `[TodayPage] No DB coach resolved for condition "${selectedCondition}". ` +
+      'Rendering name-only fallback. Coach intro will show the generic placeholder — check coaches table data.'
+    )
+    coach = {
+      name: staticCoach.name,
+      intro: '', // Never pull from static config — intro must come from DB
+      illustration: undefined,
+      rankUpQuote: '' // Never pull from static config — rank_up_quote must come from DB
+    }
+  }
+
+  const activeCoach = coach!
 
   return (
     <div className="space-y-8 pb-8">
@@ -93,27 +84,35 @@ export default async function TodayPage() {
       {/* Coach Greeting Card - Sourced from coaches lookup */}
       <section className="rounded-2xl bg-surface p-5 border border-divider/50 shadow-sm space-y-3">
         <div className="flex items-center space-x-3">
-          <div className="h-10 w-10 relative rounded-full overflow-hidden shrink-0 bg-transparent">
-            <Image
-              src={coach.illustration}
-              alt={`Coach ${coach.name} Avatar`}
-              fill
-              sizes="40px"
-              className="object-cover"
-            />
-          </div>
+          {activeCoach.illustration ? (
+            <div className="h-10 w-10 relative rounded-full overflow-hidden shrink-0">
+              <Image
+                src={activeCoach.illustration}
+                alt={`Coach ${activeCoach.name} Avatar`}
+                fill
+                sizes="40px"
+                className="object-cover"
+              />
+            </div>
+          ) : (
+            <div className="h-10 w-10 rounded-full bg-[#781818] flex items-center justify-center text-[#F8F8F0] font-bold text-base select-none shrink-0">
+              {activeCoach.name.charAt(0).toUpperCase()}
+            </div>
+          )}
           <div>
-            <h3 className="font-semibold text-text-primary">Coach {coach.name}</h3>
+            <h3 className="font-semibold text-text-primary">Coach {activeCoach.name}</h3>
             <p className="text-xs text-text-secondary">Your Personal Coach</p>
           </div>
         </div>
-        <p className="text-sm text-text-primary italic leading-relaxed">
-          &ldquo;Focus on today&apos;s action steps. Consistency over intensity is how we heal and adapt.&rdquo;
-        </p>
+        {activeCoach.intro && (
+          <p className="text-sm text-text-primary italic leading-relaxed">
+            &ldquo;{activeCoach.intro}&rdquo;
+          </p>
+        )}
       </section>
 
       {/* Task List and Completion flow */}
-      <TodayChecklist selectedCondition={selectedCondition} assignedCoachName={coach.name} />
+      <TodayChecklist selectedCondition={selectedCondition} assignedCoachName={activeCoach.name} customTaskList={customTaskList} />
     </div>
   )
 }

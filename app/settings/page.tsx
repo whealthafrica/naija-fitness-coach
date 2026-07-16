@@ -2,17 +2,23 @@
 
 // Built against PRD Section 8.8 (Settings & Privacy Controls)
 import React, { useState, useEffect } from 'react'
-import { User, LogOut, Download, Trash2, X, Loader2, ShieldCheck, Award } from 'lucide-react'
+import { User, LogOut, Download, Trash2, X, Loader2, Award, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { createClient } from '@/utils/supabase/client'
-import { StatsOverviewCards } from '@/components/StatsOverviewCards'
+import { getActivePauseAction, submitSelfReportAction, updateProfileDetailsAction } from './actions'
 
 export default function SettingsPage() {
   const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const supabase = createClient()
 
   // Profile states
-  const [profile, setProfile] = useState({ name: 'Fitness Coach Patient', phone: '+234 803 000 0000', tier: 'Bronze' })
+  const [profile, setProfile] = useState({
+    name: 'Fitness Coach Patient',
+    phone: '+234 803 000 0000',
+    email: '',
+    condition: 'Hypertension',
+    tier: 'Bronze'
+  })
   const [showTierBadge, setShowTierBadge] = useState(false)
   
   // Action states
@@ -21,12 +27,32 @@ export default function SettingsPage() {
   const [confirmText, setConfirmText] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
 
+  // Self Report States
+  const [activePause, setActivePause] = useState<any | null>(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportReason, setReportReason] = useState('')
+  const [reportNote, setReportNote] = useState('')
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportSuccess, setReportSuccess] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+
+  // Edit Profile States
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editSuccess, setEditSuccess] = useState(false)
+
   // Load user profile details
   useEffect(() => {
     if (isPreview) {
       setProfile({
         name: 'Fitness Coach Patient (Preview)',
         phone: '+234 803 000 0000',
+        email: 'patient@whealthafrica.com',
+        condition: localStorage.getItem('preview_condition') || 'Hypertension',
         tier: localStorage.getItem('preview_tier') || 'Bronze'
       })
       const stored = localStorage.getItem('preview_show_tier_badge')
@@ -38,16 +64,25 @@ export default function SettingsPage() {
       } else {
         setShowTierBadge(stored === 'true')
       }
+
+      // Check preview pause
+      const previewPauseStr = localStorage.getItem('preview_active_pause')
+      if (previewPauseStr) {
+        const previewPause = JSON.parse(previewPauseStr)
+        if (new Date(previewPause.pause_ends_at) > new Date()) {
+          setActivePause(previewPause)
+        }
+      }
       return
     }
 
-    async function loadProfile() {
+    async function loadProfileAndPause() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: userProfile } = await supabase
         .from('users')
-        .select('name, phone, show_tier_badge, tier')
+        .select('name, phone, show_tier_badge, tier, condition')
         .eq('id', user.id)
         .single()
 
@@ -55,13 +90,20 @@ export default function SettingsPage() {
         setProfile({
           name: userProfile.name || 'NFC Member',
           phone: userProfile.phone || user.phone || 'No phone recorded',
+          email: user.email || '',
+          condition: userProfile.condition || 'Hypertension',
           tier: userProfile.tier || 'Bronze'
         })
         setShowTierBadge(!!userProfile.show_tier_badge)
       }
+
+      const res = await getActivePauseAction()
+      if (res.success && res.activePause) {
+        setActivePause(res.activePause)
+      }
     }
 
-    loadProfile()
+    loadProfileAndPause()
   }, [isPreview])
 
   // Handle opt-in tier badge toggle (default off, logs telemetry)
@@ -227,6 +269,131 @@ export default function SettingsPage() {
     }
   }
 
+  // Submit self-report
+  const handleSubmitSelfReport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setReportError(null)
+    setReportSuccess(false)
+
+    if (!reportReason) {
+      setReportError('Please select a reason.')
+      return
+    }
+
+    setReportLoading(true)
+    if (isPreview) {
+      const mockPause = {
+        id: `pause_${Date.now()}`,
+        patient_id: 'preview_user_id',
+        reason: reportReason,
+        note: reportNote.trim() || null,
+        pause_starts_at: new Date().toISOString(),
+        pause_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        created_at: new Date().toISOString()
+      }
+      localStorage.setItem('preview_active_pause', JSON.stringify(mockPause))
+      setActivePause(mockPause)
+      setReportSuccess(true)
+      setReportLoading(false)
+      // Close modal after short delay
+      setTimeout(() => {
+        setShowReportModal(false)
+        setReportSuccess(false)
+        setReportReason('')
+        setReportNote('')
+      }, 1000)
+      return
+    }
+
+    const res = await submitSelfReportAction(reportReason, reportNote)
+    if (res.success) {
+      setReportSuccess(true)
+      setReportReason('')
+      setReportNote('')
+      // Reload pause
+      const pauseRes = await getActivePauseAction()
+      if (pauseRes.success && pauseRes.activePause) {
+        setActivePause(pauseRes.activePause)
+      }
+      setTimeout(() => {
+        setShowReportModal(false)
+        setReportSuccess(false)
+      }, 1000)
+    } else {
+      setReportError(res.error || 'Failed to submit report.')
+    }
+    setReportLoading(false)
+  }
+
+  // Open Edit Profile Modal
+  const openEditModal = () => {
+    setEditName(profile.name)
+    setEditPhone(profile.phone)
+    setEditEmail(profile.email)
+    setEditError(null)
+    setEditSuccess(false)
+    setShowEditModal(true)
+  }
+
+  // Handle Save Profile Details
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEditError(null)
+    setEditSuccess(false)
+
+    if (!editName.trim()) {
+      setEditError('Name is required.')
+      return
+    }
+
+    setEditLoading(true)
+    if (isPreview) {
+      setProfile(prev => ({
+        ...prev,
+        name: editName,
+        phone: editPhone,
+        email: editEmail
+      }))
+      setEditSuccess(true)
+      setEditLoading(false)
+      setTimeout(() => {
+        setShowEditModal(false)
+        setEditSuccess(false)
+      }, 1000)
+      return
+    }
+
+    const res = await updateProfileDetailsAction(editName, editPhone, editEmail)
+    if (res.success) {
+      setEditSuccess(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('name, phone, condition, tier, show_tier_badge')
+          .eq('id', user.id)
+          .single()
+
+        if (userProfile) {
+          setProfile({
+            name: userProfile.name || 'NFC Member',
+            phone: userProfile.phone || user.phone || 'No phone recorded',
+            email: user.email || '',
+            condition: userProfile.condition || 'Hypertension',
+            tier: userProfile.tier || 'Bronze'
+          })
+        }
+      }
+      setTimeout(() => {
+        setShowEditModal(false)
+        setEditSuccess(false)
+      }, 1000)
+    } else {
+      setEditError(res.error || 'Failed to update profile.')
+    }
+    setEditLoading(false)
+  }
+
   return (
     <div className="space-y-8 pb-8">
       {/* Header section */}
@@ -254,9 +421,6 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Stats Overview Summary */}
-      <StatsOverviewCards />
-
       {/* Preferences & Privacy Controls */}
       <section className="space-y-3">
         <h2 className="text-xs font-bold text-text-secondary uppercase tracking-wider">
@@ -264,8 +428,42 @@ export default function SettingsPage() {
         </h2>
         <div className="space-y-2">
           
+          {/* Rough Patch / Pause check-ins (Section 2 & 3) */}
+          {activePause ? (
+            <div className="flex items-center justify-between rounded-2xl bg-amber-50/60 border border-amber-200/80 p-4">
+              <div className="flex items-center space-x-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div className="space-y-0.5">
+                  <span className="text-sm font-semibold text-text-primary block">Struggle Detection Paused</span>
+                  <span className="text-xs text-text-secondary block">
+                    Paused until {new Date(activePause.pause_ends_at).toLocaleDateString()} ({
+                      activePause.reason === 'health_flareup' ? 'Health flare-up' :
+                      activePause.reason === 'overwhelmed' ? 'Feeling overwhelmed' :
+                      activePause.reason === 'busy_life' ? 'Busy with life' : 'Short break'
+                    })
+                  </span>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Active</span>
+            </div>
+          ) : (
+            <div 
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center space-x-3">
+                <AlertTriangle className="h-5 w-5 text-text-secondary" />
+                <span className="text-sm font-semibold text-text-primary">Having a rough patch?</span>
+              </div>
+              <span className="text-xs font-semibold text-primary uppercase tracking-wider font-mono">Report</span>
+            </div>
+          )}
+
           {/* Edit Personal Details (UI Link placeholder) */}
-          <div className="flex items-center justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors cursor-pointer">
+          <div 
+            onClick={openEditModal}
+            className="flex items-center justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors cursor-pointer"
+          >
             <div className="flex items-center space-x-3">
               <User className="h-5 w-5 text-text-secondary" />
               <span className="text-sm font-semibold text-text-primary">Personal Details</span>
@@ -321,19 +519,7 @@ export default function SettingsPage() {
             <span className="text-xs font-semibold text-[#B83D3D] uppercase tracking-wider">Delete</span>
           </div>
 
-          {/* Developer Admin Console */}
-          {isPreview && (
-            <div 
-              onClick={() => window.location.href = '/admin'}
-              className="flex items-center justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center space-x-3">
-                <ShieldCheck className="h-5 w-5 text-primary stroke-[1.5]" />
-                <span className="text-sm font-semibold text-text-primary">Admin Control Center (Dev)</span>
-              </div>
-              <span className="text-xs font-semibold text-primary uppercase tracking-wider font-mono">Open</span>
-            </div>
-          )}
+
 
         </div>
       </section>
@@ -426,6 +612,179 @@ export default function SettingsPage() {
               </Button>
             </div>
 
+          </div>
+        </div>
+      )}
+      {/* Self Report (Rough Patch) Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-text-primary/20 backdrop-blur-sm z-[999] flex items-end sm:items-center justify-center p-4">
+          <div className="bg-surface w-full max-w-md rounded-2xl shadow-xl border border-divider/50 p-6 space-y-4 animate-in slide-in-from-bottom duration-300">
+            <div className="flex items-center justify-between pb-2 border-b border-divider">
+              <div>
+                <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-0.5">Rough Patch Report</span>
+                <h3 className="text-lg font-bold text-text-primary">Having a rough patch?</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowReportModal(false)
+                  setReportError(null)
+                  setReportReason('')
+                  setReportNote('')
+                }} 
+                className="text-text-secondary hover:text-text-primary"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitSelfReport} className="space-y-4">
+              {reportError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-semibold">
+                  {reportError}
+                </div>
+              )}
+              {reportSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold">
+                  Report submitted. Struggle detection paused for 7 days.
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Select a reason</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { val: 'health_flareup', label: 'Health flare-up' },
+                    { val: 'overwhelmed', label: 'Feeling overwhelmed' },
+                    { val: 'busy_life', label: 'Busy with life/family' },
+                    { val: 'need_break', label: 'Just need a short break' }
+                  ].map(item => (
+                    <button
+                      key={item.val}
+                      type="button"
+                      onClick={() => setReportReason(item.val)}
+                      className={`p-3 rounded-xl border text-xs font-semibold text-center transition-all ${
+                        reportReason === item.val
+                          ? 'border-[#781818] bg-[#781818]/5 text-[#781818]'
+                          : 'border-divider/50 hover:bg-surface-secondary text-text-secondary'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Additional Notes (Optional)</label>
+                <textarea
+                  value={reportNote}
+                  onChange={e => setReportNote(e.target.value)}
+                  placeholder="Share any additional context with your coach if you like..."
+                  rows={3}
+                  className="w-full rounded-xl border border-divider/50 p-3 text-xs bg-surface-secondary focus:outline-none text-text-primary"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={reportLoading || !reportReason}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5"
+              >
+                {reportLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Pause Struggle Detection'}
+              </Button>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Profile Details Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-text-primary/20 backdrop-blur-sm z-[999] flex items-end sm:items-center justify-center p-4">
+          <div className="bg-surface w-full max-w-md rounded-2xl shadow-xl border border-divider/50 p-6 space-y-4 animate-in slide-in-from-bottom duration-300">
+            <div className="flex items-center justify-between pb-2 border-b border-divider">
+              <div>
+                <span className="text-xs font-bold text-primary uppercase tracking-wider block mb-0.5">Profile Settings</span>
+                <h3 className="text-lg font-bold text-text-primary">Edit Personal Details</h3>
+              </div>
+              <button 
+                onClick={() => setShowEditModal(false)} 
+                className="text-text-secondary hover:text-text-primary"
+                disabled={editLoading}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              {editError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-semibold">
+                  {editError}
+                </div>
+              )}
+              {editSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold">
+                  Profile updated successfully!
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  className="w-full rounded-xl border border-divider/50 p-3 text-xs bg-surface-secondary focus:outline-none text-text-primary"
+                  placeholder="e.g. Bunmi K."
+                  disabled={editLoading}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Phone Number</label>
+                <input
+                  type="text"
+                  required
+                  value={editPhone}
+                  onChange={e => setEditPhone(e.target.value)}
+                  className="w-full rounded-xl border border-divider/50 p-3 text-xs bg-surface-secondary focus:outline-none text-text-primary"
+                  placeholder="e.g. +2348030000000"
+                  disabled={editLoading}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">Email Address</label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  className="w-full rounded-xl border border-divider/50 p-3 text-xs bg-surface-secondary focus:outline-none text-text-primary"
+                  placeholder="e.g. patient@whealthafrica.com"
+                  disabled={editLoading}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-text-secondary/50 uppercase tracking-wider">Clinical Condition Focus</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={profile.condition}
+                  className="w-full rounded-xl border border-divider/30 p-3 text-xs bg-divider/10 text-text-secondary cursor-not-allowed"
+                />
+                <span className="text-[10px] text-text-secondary/60 block mt-1">
+                  To change your condition, contact your coach or support.
+                </span>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={editLoading || !editName.trim() || !editPhone.trim()}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5"
+              >
+                {editLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Profile Changes'}
+              </Button>
+            </form>
           </div>
         </div>
       )}

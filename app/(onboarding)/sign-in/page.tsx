@@ -88,9 +88,6 @@ export default function SignInPage() {
           </button>
         </div>
 
-        <p className="text-xs font-semibold text-text-secondary text-center max-w-xs mx-auto pt-2">
-          Secure authentication powered by Supabase.
-        </p>
       </div>
     </div>
   )

@@ -15,6 +15,8 @@ export default function EmailPage() {
   const [error, setError] = useState<string | null>(null)
   const [sentSuccess, setSentSuccess] = useState(false)
 
+  const isValid = email.trim().includes('@') && email.trim().includes('.')
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -132,7 +134,7 @@ export default function EmailPage() {
 
         {/* Action Button stack - brought closer */}
         <div className="space-y-4 pt-2">
-          <Button type="submit" variant="primary" disabled={loading}>
+          <Button type="submit" variant="primary" disabled={!isValid || loading}>
             <span className="w-full flex items-center justify-center gap-2">
               {loading ? (
                 <>

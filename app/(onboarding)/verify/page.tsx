@@ -200,10 +200,23 @@ function VerifyContent() {
               ))}
             </div>
 
-            {/* Reassurance Copy */}
-            <p className="text-xs font-semibold text-text-secondary text-center pt-1">
-              This can take a few seconds on some networks.
-            </p>
+            {/* Quiet Resend Option */}
+            <div className="text-center pt-3">
+              {resendTimer > 0 ? (
+                <p className="text-xs font-semibold text-text-secondary">
+                  Didn&apos;t get it? Resend in {resendTimer}s
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resending}
+                  className="text-xs font-bold text-primary hover:underline transition-colors disabled:opacity-50"
+                >
+                  {resending ? 'Sending...' : "Didn't get it? Resend code"}
+                </button>
+              )}
+            </div>
           </div>
 
           {error && (
@@ -224,24 +237,6 @@ function VerifyContent() {
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <span>Confirming code...</span>
             </div>
-          )}
-        </div>
-
-        {/* Quiet Resend Option */}
-        <div className="text-center pt-2">
-          {resendTimer > 0 ? (
-            <p className="text-xs font-semibold text-text-secondary">
-              Send another code in {resendTimer}s
-            </p>
-          ) : (
-            <button
-              type="button"
-              onClick={handleResend}
-              disabled={resending}
-              className="text-xs font-bold text-primary hover:underline transition-colors disabled:opacity-50"
-            >
-              {resending ? 'Sending...' : 'Send another code'}
-            </button>
           )}
         </div>
       </div>

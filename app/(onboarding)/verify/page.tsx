@@ -43,21 +43,24 @@ function VerifyContent() {
     }
   }, [resendTimer])
 
-  // Trigger Supabase OTP Verification
   const handleVerify = async (code: string) => {
     setError(null)
     setResendStatus(null)
     setLoading(true)
 
     try {
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        phone: phone,
-        token: code,
-        type: 'sms',
+      const response = await fetch('/api/verify-phone', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone, code }),
       })
 
-      if (verifyError) {
-        setError(verifyError.message)
+      const result = await response.json()
+
+      if (!response.ok) {
+        setError(result.error || 'Verification failed. Please check the code.')
       } else {
         router.push('/verified')
       }
@@ -113,12 +116,22 @@ function VerifyContent() {
     setResendStatus(null)
 
     try {
-      const { error: resendError } = await supabase.auth.signInWithOtp({
+      const { error: resendError } = await supabase.auth.updateUser({
         phone: phone,
       })
 
       if (resendError) {
-        setError(resendError.message)
+        if (
+          resendError.message.toLowerCase().includes('already registered') ||
+          resendError.message.toLowerCase().includes('already exists') ||
+          resendError.status === 422
+        ) {
+          setError(
+            'This phone number is already registered to another account. If you believe this is a mistake, contact support.'
+          )
+        } else {
+          setError(resendError.message)
+        }
       } else {
         setResendStatus('Another code has been sent.')
         setResendTimer(30) // Reset the 30s timer

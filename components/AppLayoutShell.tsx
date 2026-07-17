@@ -24,6 +24,12 @@ export function AppLayoutShell({ children }: { children: React.ReactNode }) {
     pathname === '/condition' ||
     pathname === '/coach'
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && !isAdminSurface && !isOnboarding) {
+      localStorage.setItem('has_logged_in_before', 'true')
+    }
+  }, [isAdminSurface, isOnboarding])
+
   // Admin surface: full viewport, no nav, no patient wrapper
   if (isAdminSurface) {
     return <>{children}</>
@@ -34,12 +40,6 @@ export function AppLayoutShell({ children }: { children: React.ReactNode }) {
   }
 
   // Standard patient shell layout for dashboard views
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('has_logged_in_before', 'true')
-    }
-  }, [])
-
   return (
     <>
       <main className="mx-auto max-w-md pb-24 p-4">{children}</main>

@@ -16,11 +16,12 @@ export default function SignInPage() {
     setLoading(true)
     setError(null)
     try {
+      const hasLoggedInBefore = typeof window !== 'undefined' && localStorage.getItem('has_logged_in_before') === 'true'
       const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
+          queryParams: hasLoggedInBefore ? undefined : {
             prompt: 'select_account'
           }
         },

@@ -34,6 +34,12 @@ export function AppLayoutShell({ children }: { children: React.ReactNode }) {
   }
 
   // Standard patient shell layout for dashboard views
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('has_logged_in_before', 'true')
+    }
+  }, [])
+
   return (
     <>
       <main className="mx-auto max-w-md pb-24 p-4">{children}</main>

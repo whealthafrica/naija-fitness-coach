@@ -25,7 +25,6 @@ interface FeedItem {
 }
 
 export default function CommunityPage() {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const [coachName, setCoachName] = useState('Adaeze')
   const [selectedCondition, setSelectedCondition] = useState('General Fitness')
   const [rankUpData, setRankUpData] = useState<{ oldTier: TierType; newTier: TierType } | null>(null)
@@ -43,21 +42,6 @@ export default function CommunityPage() {
   useEffect(() => {
     async function loadEvents() {
       setEventsLoading(true)
-      if (isPreview) {
-        // Set mock events based on condition
-        setUpcomingEvents([
-          {
-            id: 'evt_mock_1',
-            title: `Weekly Q&A Session with Coach ${coachName}`,
-            description: 'Ask questions about glucose management and active logs.',
-            event_datetime: new Date(Date.now() + 86400000).toISOString(),
-            status: 'upcoming'
-          }
-        ])
-        setEventsLoading(false)
-        return
-      }
-
       try {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
@@ -89,31 +73,12 @@ export default function CommunityPage() {
     if (coachName) {
       loadEvents()
     }
-  }, [coachName, isPreview])
+  }, [coachName])
 
   // Load site-wide product announcements (limit 3)
   useEffect(() => {
     async function loadAnnouncements() {
       setAnnouncementsLoading(true)
-      if (isPreview) {
-        // Read custom mock announcements if any, else seed
-        const localAnn = JSON.parse(localStorage.getItem('custom_announcements') || '[]')
-        if (localAnn.length > 0) {
-          setAnnouncements(localAnn)
-        } else {
-          setAnnouncements([
-            {
-              id: 'ann_mock_1',
-              title: 'New Pathway: Advanced Mobility Released',
-              body: 'A brand new interactive pathway level has been added to address metabolic mobility adaptation.',
-              published_at: new Date(Date.now() - 172800000).toISOString()
-            }
-          ])
-        }
-        setAnnouncementsLoading(false)
-        return
-      }
-
       try {
         const supabase = createClient()
         const { data: dbAnnouncements } = await supabase
@@ -130,118 +95,49 @@ export default function CommunityPage() {
     }
 
     loadAnnouncements()
-  }, [isPreview])
+  }, [])
 
   // Fetch coach identity dynamically from user's selection
   useEffect(() => {
-    let activeCoachName = 'Adaeze'
+    const loadCoach = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    const getCookie = (name: string) => {
-      const value = `; ${document.cookie}`
-      const parts = value.split(`; ${name}=`)
-      if (parts.length === 2) return decodeURIComponent(parts.pop()?.split(';').shift() || '')
-      return ''
-    }
+      const { data: profile } = await supabase
+        .from('users')
+        .select('condition, coach_id')
+        .eq('id', user.id)
+        .single()
+      
+      const activeCondition = profile?.condition || 'Hypertension'
+      setSelectedCondition(activeCondition)
 
-    const assignedCoach = getCookie('preview_assigned_coach')
-    const condition = getCookie('preview_condition') || 'Hypertension'
-    setSelectedCondition(condition)
-
-    if (isPreview) {
-      if (assignedCoach) {
-        setCoachName(assignedCoach)
-      } else {
-        const matchedCoach = coachesConfig[condition] || coachesConfig['General Fitness']
-        setCoachName(matchedCoach.name)
-      }
-    } else {
-      const loadCoach = async () => {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
-
-        const { data: profile } = await supabase
-          .from('users')
-          .select('condition, coach_id')
-          .eq('id', user.id)
+      let coachNameResolved = ''
+      if (profile?.coach_id) {
+        const { data: dbCoach } = await supabase
+          .from('coaches')
+          .select('name, rank_up_quote')
+          .eq('id', profile.coach_id)
           .single()
-        
-        const activeCondition = profile?.condition || 'Hypertension'
-        setSelectedCondition(activeCondition)
-
-        let coachNameResolved = ''
-        if (profile?.coach_id) {
-          const { data: dbCoach } = await supabase
-            .from('coaches')
-            .select('name, rank_up_quote')
-            .eq('id', profile.coach_id)
-            .single()
-          if (dbCoach) {
-            coachNameResolved = dbCoach.name
-            if (dbCoach.rank_up_quote) setCoachRankUpQuote(dbCoach.rank_up_quote)
-          }
+        if (dbCoach) {
+          coachNameResolved = dbCoach.name
+          if (dbCoach.rank_up_quote) setCoachRankUpQuote(dbCoach.rank_up_quote)
         }
-
-        if (!coachNameResolved) {
-          const matchedCoach = coachesConfig[activeCondition] || coachesConfig['General Fitness']
-          coachNameResolved = matchedCoach.name
-        }
-        setCoachName(coachNameResolved)
       }
-      loadCoach()
+
+      if (!coachNameResolved) {
+        const matchedCoach = coachesConfig[activeCondition] || coachesConfig['General Fitness']
+        coachNameResolved = matchedCoach.name
+      }
+      setCoachName(coachNameResolved)
     }
-  }, [isPreview])
+    loadCoach()
+  }, [])
 
   // Populate feed posts when coach name is loaded and system announcements are fetched
   useEffect(() => {
     async function loadFeed() {
-      if (isPreview) {
-        let coach1Name = 'Tunde'
-        let coach3Name = 'Adaeze'
-        const basePosts: FeedItem[] = [
-          {
-            id: 'post_1',
-            author: `Coach ${coach1Name}`,
-            role: 'Coach',
-            content: `Just posted a new mobility tip on the Today screen. Remember, focusing on today's steps for even 5 minutes builds long-term metabolic health. Consistency always beats intensity!`,
-            time: '3 hours ago',
-            reactions: { love: 14, celebrate: 8, inspired: 21 },
-            userReaction: null
-          },
-          {
-            id: 'post_2',
-            author: 'System Achievement',
-            role: 'System',
-            content: 'Chidi O. just unlocked Level 2 Pathway milestones by completing 15 active consistency check-ins!',
-            time: '5 hours ago',
-            reactions: { love: 9, celebrate: 18, inspired: 4 },
-            userReaction: null
-          },
-          {
-            id: 'post_3',
-            author: `Coach ${coach3Name}`,
-            role: 'Coach',
-            content: `A quick tip for today's hydration: try replacing a sugary drink with a glass of unsweetened water or native zobo tea. Small choices make health adaptation feel effortless.`,
-            time: 'Yesterday',
-            reactions: { love: 31, celebrate: 12, inspired: 45 },
-            userReaction: null
-          },
-          {
-            id: 'post_4',
-            author: 'Bunmi K.',
-            role: 'Patient',
-            tier: 'Silver',
-            show_tier_badge: true,
-            content: `Just completed today's low-sodium check-in. The Uziza pepper tip from Coach Adaeze makes seasoned food taste incredible without table salt!`,
-            time: '2 days ago',
-            reactions: { love: 5, celebrate: 3, inspired: 11 },
-            userReaction: null
-          }
-        ]
-        setFeedItems(basePosts)
-        return
-      }
-
       try {
         const supabaseInstance = createClient()
         const { data: { user } } = await supabaseInstance.auth.getUser()
@@ -336,40 +232,10 @@ export default function CommunityPage() {
     if (coachName) {
       loadFeed()
     }
-  }, [coachName, isPreview])
+  }, [coachName])
 
   // Handle post reaction increments and award CP with persistence and anti-farming (Section 8.6)
   const handleReact = async (postId: string, type: 'love' | 'celebrate' | 'inspired') => {
-    if (isPreview) {
-      // Toggle reactions in preview mode locally
-      setFeedItems(prevItems => 
-        prevItems.map(post => {
-          if (post.id !== postId) return post
-
-          const newReactions = { ...post.reactions }
-          let newUserReaction = post.userReaction
-
-          if (post.userReaction === type) {
-            newReactions[type] = Math.max(0, newReactions[type] - 1)
-            newUserReaction = null
-          } else {
-            if (post.userReaction) {
-              newReactions[post.userReaction] = Math.max(0, newReactions[post.userReaction] - 1)
-            }
-            newReactions[type] += 1
-            newUserReaction = type
-          }
-
-          return {
-            ...post,
-            reactions: newReactions,
-            userReaction: newUserReaction
-          }
-        })
-      )
-      return
-    }
-
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()

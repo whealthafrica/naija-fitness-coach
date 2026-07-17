@@ -72,16 +72,7 @@ export default function ConditionPage() {
     }
     const coachCode = coachMap[conditionName] || 'amara'
 
-    // Always set the cookie in the browser to keep preview/client-side state aligned
-    document.cookie = `preview_condition=${encodeURIComponent(conditionName)}; path=/;`
-
-    // Bypass database update in Preview Mode
-    const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-    if (isPreview) {
-      window.location.href = `/coach?code=${coachCode}`
-      setLoading(false)
-      return
-    }
+    // Proceed with database update
 
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser()

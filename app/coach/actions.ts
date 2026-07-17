@@ -4,11 +4,7 @@ import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 import { TaskDef } from '@/lib/adaptivePathways'
-
-// Check if we are running in local Preview Mode
-const isPreviewMode = () => {
-  return process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-}
+const isPreviewMode = () => false
 
 // Helper to make raw HTTP requests to Gemini API (avoids unresolved external package installation errors)
 async function callGeminiApi(prompt: string, temperature: number, jsonSchema?: any): Promise<string> {
@@ -107,71 +103,6 @@ export async function coachLoginAction(email: string, password: string) {
 }
 
 export async function getCoachDashboardData(simulatedCoachId?: string) {
-  if (isPreviewMode()) {
-    return {
-      success: true,
-      role: 'superadmin',
-      clients: [
-        {
-          id: 'preview_client_1',
-          name: 'Emeka (Preview)',
-          phone: '+234 801 234 5678',
-          condition: 'Type 2 Diabetes',
-          cp: 120,
-          createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-          programProgress: 45.0,
-          tier: 'Bronze',
-          hasPendingFlag: true,
-          pendingFlagReason: 'Compliance below 40% threshold'
-        },
-        {
-          id: 'preview_client_2',
-          name: 'Adaeze (Preview)',
-          phone: '+234 802 345 6789',
-          condition: 'Hypertension',
-          cp: 230,
-          createdAt: new Date(Date.now() - 86400000 * 60).toISOString(),
-          programProgress: 68.0,
-          tier: 'Silver',
-          hasPendingFlag: false,
-          pendingFlagReason: null
-        },
-        {
-          id: 'preview_client_3',
-          name: 'Ngozi (Preview)',
-          phone: '+234 803 456 7890',
-          condition: 'PCOS',
-          cp: 50,
-          createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-          programProgress: 20.0,
-          tier: 'Bronze',
-          hasPendingFlag: false,
-          pendingFlagReason: null
-        }
-      ],
-      notifications: [
-        {
-          id: 'preview_notif_1',
-          type: 'new_patient',
-          unread: true,
-          createdAt: new Date().toISOString(),
-          patientName: 'Emeka (Preview)',
-          patientCondition: 'Type 2 Diabetes'
-        }
-      ],
-      stats: {
-        total: 3,
-        avgProgress: 44.3,
-        avgCP: 133.3,
-        pendingFlagsCount: 1
-      },
-      events: [
-        { id: 'evt_1', title: 'Weekly Q&A Session', description: 'Interactive group question and answer session.', event_datetime: new Date(Date.now() + 86400000).toISOString(), status: 'upcoming', coach_id: 'coach_preview_1' },
-        { id: 'evt_2', title: 'General Fitness Workshop', description: 'Simple techniques for keeping active at home.', event_datetime: new Date(Date.now() + 172800000).toISOString(), status: 'upcoming', coach_id: 'coach_preview_2' }
-      ]
-    }
-  }
-
   const cookieStore = await cookies()
   const supabase = createClient(cookieStore)
 
@@ -307,64 +238,6 @@ export async function getCoachDashboardData(simulatedCoachId?: string) {
 }
 
 export async function getClientDetail(userId: string, simulatedCoachId?: string) {
-  if (isPreviewMode()) {
-    // Generate dummy task completions for SVG chart plotting
-    const completions = []
-    const now = new Date()
-    for (let i = 15; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
-      completions.push({
-        id: `prev_comp_${i}`,
-        task_id: `Task_${i}`,
-        task_type: i % 3 === 0 ? 'lesson_checkpoint_mid' : i % 3 === 1 ? 'lesson_checkpoint_end' : 'custom',
-        reflective_choice: 'Yes, fully completed',
-        completed_at: d.toISOString()
-      })
-    }
-
-    return {
-      success: true,
-      profile: {
-        id: userId,
-        name: userId === 'preview_client_2' ? 'Adaeze (Preview)' : userId === 'preview_client_3' ? 'Ngozi (Preview)' : 'Emeka (Preview)',
-        phone: '+234 801 234 5678',
-        condition: userId === 'preview_client_2' ? 'Hypertension' : userId === 'preview_client_3' ? 'PCOS' : 'Type 2 Diabetes',
-        cp: userId === 'preview_client_2' ? 230 : userId === 'preview_client_3' ? 50 : 120,
-        tier: userId === 'preview_client_2' ? 'Silver' : userId === 'preview_client_3' ? 'Bronze' : 'Bronze',
-        createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-        programProgress: userId === 'preview_client_2' ? 68.0 : userId === 'preview_client_3' ? 20.0 : 45.0,
-        customTaskList: [
-          { id: '1', title: '15 Min Morning Walk', desc: 'Light aerobic walk', type: 'TIMER' },
-          { id: '2', title: 'Record Blood Sugar', desc: 'Fasting glucose level log', type: 'SLIDER' }
-        ]
-      },
-      vitals: [
-        { id: 'v1', recorded_at: new Date(Date.now() - 86400000).toISOString(), weight: 78.5, blood_sugar: 110, systolic: 125, diastolic: 82 },
-        { id: 'v2', recorded_at: new Date(Date.now() - 86400000 * 4).toISOString(), weight: 79.1, blood_sugar: 125, systolic: 130, diastolic: 85 }
-      ],
-      completions,
-      outreachLogs: [
-        { id: 'o1', channel: 'WhatsApp', summary: 'Checked in on progress, reported feeling good.', created_at: new Date(Date.now() - 86400000 * 2).toISOString() }
-      ],
-      flags: userId === 'preview_client_1' ? [
-        {
-          id: 'flag_preview_1',
-          status: 'pending',
-          trigger_reason: 'Compliance below 40% threshold',
-          triggered_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-          proposed_pathway: [
-            { id: 'prop_1', title: '10 Min Easy Walk', type: 'TIMER' },
-            { id: 'prop_2', title: 'Simple Self Reflection Check', type: 'MCQ' }
-          ]
-        }
-      ] : [],
-      activePause: userId === 'preview_client_2' ? {
-        reason: 'health_flareup',
-        pause_ends_at: new Date(Date.now() + 86400000 * 5).toISOString()
-      } : null
-    }
-  }
-
   const cookieStore = await cookies()
   const supabase = createClient(cookieStore)
 

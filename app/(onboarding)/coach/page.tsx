@@ -13,7 +13,6 @@ interface PageProps {
 }
 
 export default async function CoachPage({ searchParams }: PageProps) {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const params = await searchParams
   const urlCoachCode = params.code
 
@@ -41,41 +40,41 @@ export default async function CoachPage({ searchParams }: PageProps) {
           code: dbCoach.code
         }
       }
-    } catch {
-      // Graceful fallback to static list if db table or connection fails
-    }
-
-    if (!coachDetails) {
-      // DB lookup failed to find a coach for this code. Don't fall back to static content —
-      // coach-authored fields (intro, illustration) only exist in the DB.
-      // Render a name-only record; the page will show an error for the missing illustration.
-      const nameGuess = urlCoachCode
-      coachDetails = {
-        name: nameGuess,
-        intro: '', // No DB row — cannot show static intro
-        illustration: '',
-        rankUpQuote: '',
-        code: urlCoachCode.toLowerCase()
-      }
+    } catch (err) {
+      console.error('Failed to query coach by code:', err)
     }
   }
 
-  // 2. If no direct URL match, resolve from onboarding selection
+  // 2. Resolve via user profile condition fallback if URL parameter is missing
   if (!coachDetails) {
-    const previewCookie = cookieStore.get('preview_condition')?.value
-    if (previewCookie) {
-      selectedCondition = decodeURIComponent(previewCookie)
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: profile } = await supabase
-          .from('users')
-          .select('condition')
-          .eq('id', user.id)
-          .single()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('condition')
+        .eq('id', user.id)
+        .single()
 
-        if (profile?.condition) {
-          selectedCondition = profile.condition
+      if (profile?.condition) {
+        selectedCondition = profile.condition
+        try {
+          const { data: dbCoach } = await supabase
+            .from('coaches')
+            .select('*')
+            .eq('condition', selectedCondition)
+            .single()
+
+          if (dbCoach) {
+            coachDetails = {
+              name: dbCoach.name,
+              intro: dbCoach.intro || '',
+              illustration: dbCoach.illustration || undefined,
+              rankUpQuote: dbCoach.rank_up_quote || '',
+              code: dbCoach.code
+            }
+          }
+        } catch (err) {
+          console.error('Failed to query coach by condition:', err)
         }
       }
     }
@@ -103,17 +102,8 @@ export default async function CoachPage({ searchParams }: PageProps) {
     'use server'
     const coachName = formData.get('coach_name') as string
     const coachCode = formData.get('coach_code') as string
-    const isPreviewAction = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
 
     const cookieStore = await cookies()
-    
-    // Store assigned coach cookie to align dashboard/feed instantly
-    cookieStore.set('preview_assigned_coach', coachName, { path: '/' })
-
-    if (isPreviewAction) {
-      revalidatePath('/')
-      redirect('/')
-    }
 
     const supabaseClient = createClient(cookieStore)
     const { data: { user } } = await supabaseClient.auth.getUser()

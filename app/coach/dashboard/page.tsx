@@ -143,17 +143,6 @@ export default function CoachDashboard() {
   }, [])
 
   useEffect(() => {
-    const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-    if (isPreview) {
-      setCoachesList([
-        { id: 'coach_preview_1', name: 'Tunde', condition: 'Type 2 Diabetes', illustration: undefined },
-        { id: 'coach_preview_2', name: 'Adaeze', condition: 'Hypertension', illustration: undefined },
-        { id: 'coach_preview_3', name: 'Ngozi', condition: 'PCOS', illustration: undefined },
-        { id: 'coach_preview_4', name: 'Amara', condition: 'General Fitness', illustration: undefined }
-      ])
-      return
-    }
-
     if (role === 'superadmin') {
       supabase.from('coaches').select('*').order('name').then(({ data }) => {
         if (data) setCoachesList(data)
@@ -192,26 +181,6 @@ export default function CoachDashboard() {
 
     setEventLoading(true)
 
-    const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-
-    if (isPreview) {
-      const mockNewEvent = {
-        id: `evt_mock_${Date.now()}`,
-        title: eventTitle,
-        description: eventDescription,
-        event_datetime: new Date(eventDatetime).toISOString(),
-        status: 'upcoming',
-        coach_id: selectedEventCoachId || 'coach_preview_1'
-      }
-      setEvents(prev => [...prev, mockNewEvent])
-      setEventModalOpen(false)
-      setEventTitle('')
-      setEventDescription('')
-      setEventDatetime('')
-      setEventLoading(false)
-      return
-    }
-
     const res = await createCoachEventAction(
       eventTitle,
       eventDescription,
@@ -236,11 +205,7 @@ export default function CoachDashboard() {
     const confirmCancel = confirm('Are you sure you want to cancel this event?')
     if (!confirmCancel) return
 
-    const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-    if (isPreview) {
-      setEvents(prev => prev.map(evt => evt.id === eventId ? { ...evt, status: 'cancelled' } : evt))
-      return
-    }
+    // Proceed with cancellation
 
     const res = await cancelCoachEventAction(eventId)
     if (res.success) {
@@ -337,12 +302,8 @@ export default function CoachDashboard() {
         const fileInput = document.getElementById('coach-photo-input') as HTMLInputElement
         if (fileInput) fileInput.value = ''
         
-        // Refresh coaches list if not in preview
-        const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-        if (!isPreview) {
-          const { data } = await supabase.from('coaches').select('*').order('name')
-          if (data) setCoachesList(data)
-        }
+        const { data } = await supabase.from('coaches').select('*').order('name')
+        if (data) setCoachesList(data)
       } else {
         setRegError(res.error || 'Registration failed.')
       }
@@ -361,13 +322,8 @@ export default function CoachDashboard() {
       setSelectedCoachToManage(null)
       setReassignToCoachId('')
       
-      const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-      if (!isPreview) {
-        const { data } = await supabase.from('coaches').select('*').order('name')
-        if (data) setCoachesList(data)
-      } else {
-        setCoachesList(prev => prev.filter(c => c.id !== selectedCoachToManage.id))
-      }
+      const { data } = await supabase.from('coaches').select('*').order('name')
+      if (data) setCoachesList(data)
       loadData()
     } else {
       setDeactivateError(res.error || 'Action failed.')
@@ -451,23 +407,6 @@ export default function CoachDashboard() {
     }
 
     setAnnLoading(true)
-    const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-    if (isPreview) {
-      const localAnn = JSON.parse(localStorage.getItem('custom_announcements') || '[]')
-      localAnn.push({
-        id: `ann_${Date.now()}`,
-        title: annTitle,
-        content: annBody,
-        time: 'Just now',
-        type: 'announcement'
-      })
-      localStorage.setItem('custom_announcements', JSON.stringify(localAnn))
-      setAnnSuccess(true)
-      setAnnTitle('')
-      setAnnBody('')
-      setAnnLoading(false)
-      return
-    }
 
     const res = await createAnnouncementAction(annTitle, annBody)
     if (res.success) {

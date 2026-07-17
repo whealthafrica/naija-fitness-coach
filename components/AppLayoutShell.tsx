@@ -24,33 +24,13 @@ export function AppLayoutShell({ children }: { children: React.ReactNode }) {
     pathname === '/condition' ||
     pathname === '/coach'
 
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-
   // Admin surface: full viewport, no nav, no patient wrapper
   if (isAdminSurface) {
-    return (
-      <>
-        {children}
-        {isPreview && (
-          <div className="fixed bottom-4 right-4 bg-[#2B211D] text-[#F5EDE1] text-[9px] font-bold px-2 py-1 rounded shadow-md z-[9999] uppercase tracking-wider select-none pointer-events-none border border-[#FAF4EC]/10">
-            Preview Active
-          </div>
-        )}
-      </>
-    )
+    return <>{children}</>
   }
 
   if (isOnboarding) {
-    return (
-      <>
-        {children}
-        {isPreview && (
-          <div className="fixed bottom-4 right-4 bg-[#2B211D] text-[#F5EDE1] text-[9px] font-bold px-2 py-1 rounded shadow-md z-[9999] uppercase tracking-wider select-none pointer-events-none border border-[#FAF4EC]/10">
-            Preview Active
-          </div>
-        )}
-      </>
-    )
+    return <>{children}</>
   }
 
   // Standard patient shell layout for dashboard views
@@ -58,11 +38,6 @@ export function AppLayoutShell({ children }: { children: React.ReactNode }) {
     <>
       <main className="mx-auto max-w-md pb-24 p-4">{children}</main>
       <BottomNav />
-      {isPreview && (
-        <div className="fixed bottom-20 right-4 bg-[#2B211D] text-[#F5EDE1] text-[9px] font-bold px-2 py-1 rounded shadow-md z-[9999] uppercase tracking-wider select-none pointer-events-none border border-[#FAF4EC]/10">
-          Preview Active
-        </div>
-      )}
     </>
   )
 }

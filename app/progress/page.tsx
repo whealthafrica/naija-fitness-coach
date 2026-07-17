@@ -8,7 +8,6 @@ import { Button } from '@/components/Button'
 import { ConsistencyLeagueCard, CommitmentWalletRow } from '@/components/StatsOverviewCards'
 
 export default function ProgressPage() {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   interface VitalsLog {
     id: string
     systolic: number | null
@@ -31,28 +30,6 @@ export default function ProgressPage() {
 
   // Generate rolling 28-day history & load vitals
   useEffect(() => {
-    const todayString = new Date().toISOString().split('T')[0]
-    
-    if (isPreview) {
-      // 28-day rolling window: 20 completed, 8 missed (spread safely)
-      const mockHistory = [
-        true, true, false, true, true, true, false,
-        true, false, true, true, true, true, false,
-        true, true, true, false, true, true, false,
-        true, true, false, true, true, true, false
-      ]
-      setCompletedDays(mockHistory)
-
-      // Load preview vitals
-      const savedVitals = localStorage.getItem('preview_vitals_log')
-      if (savedVitals) {
-        setVitalsHistory(JSON.parse(savedVitals))
-      } else {
-        setVitalsHistory([])
-      }
-      return
-    }
-
     async function loadHistoryAndVitals() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -99,7 +76,7 @@ export default function ProgressPage() {
     }
 
     loadHistoryAndVitals()
-  }, [isPreview])
+  }, [])
 
   const getLatestBp = () => {
     const entry = vitalsHistory.find(v => v.systolic !== null && v.diastolic !== null)

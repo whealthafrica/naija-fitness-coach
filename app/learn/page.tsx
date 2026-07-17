@@ -24,7 +24,6 @@ interface QuestionDef {
 }
 
 export default function LearnPage() {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const supabase = createClient()
 
   // Pathway Focus and Gating states
@@ -75,9 +74,7 @@ export default function LearnPage() {
       return ''
     }
 
-    const condition = isPreview 
-      ? (getCookie('preview_condition') || 'Hypertension') 
-      : 'Hypertension' // Fallback, overwritten below
+    const condition = 'Hypertension' // Fallback, overwritten below
 
     setSelectedCondition(condition)
 
@@ -101,81 +98,68 @@ export default function LearnPage() {
       }
     }
 
-    // 1. Load Completed states
-    if (isPreview) {
-      const savedPathway = localStorage.getItem(`completed_pathway_${condition}`)
-      if (savedPathway) setCompletedPathwayIndices(JSON.parse(savedPathway))
-      
-      const savedGen = localStorage.getItem('completed_gen_lessons')
-      if (savedGen) setCompletedGenLessonIds(JSON.parse(savedGen))
+    const loadProfileAndCompletions = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-      // Load dynamic lessons & questions from client cache
-      loadDynamicLessons(condition)
-      resolveCoach(undefined, condition)
-    } else {
-      const loadProfileAndCompletions = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) return
+      // Fetch user condition and coach_id
+      const { data: profile } = await supabase
+        .from('users')
+        .select('condition, coach_id')
+        .eq('id', user.id)
+        .single()
 
-        // Fetch user condition and coach_id
-        const { data: profile } = await supabase
-          .from('users')
-          .select('condition, coach_id')
-          .eq('id', user.id)
-          .single()
-
-        const userCondition = profile?.condition || 'Hypertension'
-        setSelectedCondition(userCondition)
-        if (profile?.coach_id) {
-          setAssignedCoachId(profile.coach_id)
-        }
-        await resolveCoach(user.id, userCondition)
-
-        // Fetch completions (with timestamps for rolling 14-day calculation)
-        const { data: completions } = await supabase
-          .from('task_completions')
-          .select('task_id, completed_at')
-          .eq('user_id', user.id)
-
-        if (completions) {
-          const pathPrefix = `learn_path_${userCondition}_`
-          const indices: number[] = []
-          const genIds: string[] = []
-          const completedDates: Date[] = []
-
-          completions.forEach(c => {
-            if (c.task_id.startsWith(pathPrefix)) {
-              const idxStr = c.task_id.replace(pathPrefix, '')
-              const idx = parseInt(idxStr, 10)
-              if (!isNaN(idx)) indices.push(idx)
-            } else if (c.task_id.startsWith('gen_lesson_') || c.task_id.startsWith('custom_lesson_')) {
-              genIds.push(c.task_id)
-            }
-            
-            // Collect all completion dates for rolling 14-day calculation
-            if (c.completed_at) {
-              completedDates.push(new Date(c.completed_at))
-            }
-          })
-
-          // Calculate rolling 14-day completion rate
-          // Assume tasks assigned follows standard daily rhythm; adjust divisor if needed
-          const tasksPerDay = 1.5 // Conservative estimate based on typical task load
-          const totalExpectedInPeriod = tasksPerDay * 14
-          const rolling14Day = calculateRolling14DayCompletion(completedDates, Math.ceil(totalExpectedInPeriod))
-          const isAdvancedEligible = isEligibleForProgression(rolling14Day)
-
-          setCompletedPathwayIndices(indices)
-          setCompletedGenLessonIds(genIds)
-          setRolling14DayCompletion(rolling14Day)
-          setIsEligibleForAdvanced(isAdvancedEligible)
-        }
-
-        // Fetch from dynamic tables
-        loadDynamicLessons(userCondition)
+      const userCondition = profile?.condition || 'Hypertension'
+      setSelectedCondition(userCondition)
+      if (profile?.coach_id) {
+        setAssignedCoachId(profile.coach_id)
       }
-      loadProfileAndCompletions()
+      await resolveCoach(user.id, userCondition)
+
+      // Fetch completions (with timestamps for rolling 14-day calculation)
+      const { data: completions } = await supabase
+        .from('task_completions')
+        .select('task_id, completed_at')
+        .eq('user_id', user.id)
+
+      if (completions) {
+        const pathPrefix = `learn_path_${userCondition}_`
+        const indices: number[] = []
+        const genIds: string[] = []
+        const completedDates: Date[] = []
+
+        completions.forEach(c => {
+          if (c.task_id.startsWith(pathPrefix)) {
+            const idxStr = c.task_id.replace(pathPrefix, '')
+            const idx = parseInt(idxStr, 10)
+            if (!isNaN(idx)) indices.push(idx)
+          } else if (c.task_id.startsWith('gen_lesson_') || c.task_id.startsWith('custom_lesson_')) {
+            genIds.push(c.task_id)
+          }
+          
+          // Collect all completion dates for rolling 14-day calculation
+          if (c.completed_at) {
+            completedDates.push(new Date(c.completed_at))
+          }
+        })
+
+        // Calculate rolling 14-day completion rate
+        // Assume tasks assigned follows standard daily rhythm; adjust divisor if needed
+        const tasksPerDay = 1.5 // Conservative estimate based on typical task load
+        const totalExpectedInPeriod = tasksPerDay * 14
+        const rolling14Day = calculateRolling14DayCompletion(completedDates, Math.ceil(totalExpectedInPeriod))
+        const isAdvancedEligible = isEligibleForProgression(rolling14Day)
+
+        setCompletedPathwayIndices(indices)
+        setCompletedGenLessonIds(genIds)
+        setRolling14DayCompletion(rolling14Day)
+        setIsEligibleForAdvanced(isAdvancedEligible)
+      }
+
+      // Fetch from dynamic tables
+      loadDynamicLessons(userCondition)
     }
+    loadProfileAndCompletions()
 
     // Load YouTube API script
     if (!(window as any).YT) {
@@ -184,7 +168,7 @@ export default function LearnPage() {
       const firstScriptTag = document.getElementsByTagName('script')[0]
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag)
     }
-  }, [isPreview])
+  }, [])
 
   const addHeuristicQuestionsToLesson = (l: LessonDef): LessonDef => {
     if (l.midQuestionText) return l
@@ -217,174 +201,115 @@ export default function LearnPage() {
 
   // Load Lessons & Questions dynamically
   const loadDynamicLessons = async (condition: string) => {
-    if (isPreview) {
-      // Load static defaults
-      const defaultPath = (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
-      const defaultGen = [...generalLibraryLessons].map(addHeuristicQuestionsToLesson)
+    try {
+      const { data: dbLessons } = await supabase
+        .from('lessons')
+        .select('*')
+        .order('created_at', { ascending: true })
 
-      // Load customs
-      const customLessons = JSON.parse(localStorage.getItem('custom_lessons') || '[]')
-      const customQuestions = JSON.parse(localStorage.getItem('custom_questions') || '[]')
+      const { data: dbQuestions } = await supabase
+        .from('scenario_questions')
+        .select('*')
 
-      // Filter and append customs
-      const combinedPath = [...defaultPath]
-      const combinedGen = [...defaultGen]
+      const useDbLessons = dbLessons && dbLessons.length > 0
+      const finalPath = useDbLessons
+        ? dbLessons
+            .filter(l => l.condition === condition && l.position_index !== null)
+            .sort((a, b) => (a.position_index || 0) - (b.position_index || 0))
+            .map(l => {
+              let parsedOptions: string[] | null = null
+              if (l.mid_question_options) {
+                try {
+                  parsedOptions = typeof l.mid_question_options === 'string'
+                    ? JSON.parse(l.mid_question_options)
+                    : l.mid_question_options
+                } catch (e) {
+                  parsedOptions = l.mid_question_options
+                }
+              }
+              return addHeuristicQuestionsToLesson({
+                id: l.id,
+                title: l.title,
+                section: l.section,
+                youtubeId: l.youtube_id,
+                durationText: l.duration_text,
+                durationSeconds: l.duration_seconds,
+                midQuestionText: l.mid_question_text,
+                midQuestionOptions: parsedOptions,
+                midQuestionCorrect: l.mid_question_correct,
+                endQuestionText: l.end_question_text,
+                midCheckpointPct: l.mid_checkpoint_pct,
+                endCheckpointPct: l.end_checkpoint_pct,
+                notifyCoachOpt1: l.notify_coach_opt_1,
+                notifyCoachOpt2: l.notify_coach_opt_2,
+                notifyCoachOpt3: l.notify_coach_opt_3
+              })
+            })
+        : (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
 
-      customLessons.forEach((lesson: any) => {
-        const formattedLesson: LessonDef = addHeuristicQuestionsToLesson({
-          id: lesson.id,
-          title: lesson.title,
-          section: lesson.section,
-          youtubeId: lesson.youtubeId,
-          durationText: lesson.durationText,
-          durationSeconds: lesson.durationSeconds,
-          midQuestionText: lesson.midQuestionText || null,
-          midQuestionOptions: lesson.midQuestionOptions || null,
-          midQuestionCorrect: lesson.midQuestionCorrect || null,
-          endQuestionText: lesson.endQuestionText || null
-        })
+      const finalGen = useDbLessons
+        ? dbLessons
+            .filter(l => l.condition !== condition || l.position_index === null)
+            .map(l => {
+              let parsedOptions: string[] | null = null
+              if (l.mid_question_options) {
+                try {
+                  parsedOptions = typeof l.mid_question_options === 'string'
+                    ? JSON.parse(l.mid_question_options)
+                    : l.mid_question_options
+                } catch (e) {
+                  parsedOptions = l.mid_question_options
+                }
+              }
+              return addHeuristicQuestionsToLesson({
+                id: l.id,
+                title: l.title,
+                section: l.section,
+                youtubeId: l.youtube_id,
+                durationText: l.duration_text,
+                durationSeconds: l.duration_seconds,
+                midQuestionText: l.mid_question_text,
+                midQuestionOptions: parsedOptions,
+                midQuestionCorrect: l.mid_question_correct,
+                endQuestionText: l.end_question_text,
+                midCheckpointPct: l.mid_checkpoint_pct,
+                endCheckpointPct: l.end_checkpoint_pct,
+                notifyCoachOpt1: l.notify_coach_opt_1,
+                notifyCoachOpt2: l.notify_coach_opt_2,
+                notifyCoachOpt3: l.notify_coach_opt_3
+              })
+            })
+        : generalLibraryLessons.map(addHeuristicQuestionsToLesson)
 
-        if (lesson.condition === condition && lesson.positionIndex !== null) {
-          combinedPath.push(formattedLesson)
-        } else if (!lesson.condition) {
-          combinedGen.push(formattedLesson)
-        }
-      })
-
-      setPathwayLessons(combinedPath)
+      setPathwayLessons(finalPath)
       
-      // Apply progressive escalation weighting to General Library
-      const escalatedGen = scoreAndSortLessonsForProgression(combinedGen, isEligibleForAdvanced)
+      const escalatedFinalGen = scoreAndSortLessonsForProgression(finalGen, isEligibleForAdvanced)
         .map((item: { lesson: LessonDef; score: number }) => item.lesson)
-      setGeneralLibraryLessonsList(escalatedGen)
+      setGeneralLibraryLessonsList(escalatedFinalGen)
 
-      // Map questions
       const qMap: Record<string, QuestionDef> = {}
-      customQuestions.forEach((q: any) => {
-        qMap[q.lessonId] = {
-          id: q.id,
-          lessonId: q.lessonId,
-          questionText: q.questionText,
-          options: q.options,
-          correctOption: q.correctOption
-        }
-      })
-      setQuestionsMap(qMap)
-    } else {
-      try {
-        const { data: dbLessons } = await supabase
-          .from('lessons')
-          .select('*')
-          .order('created_at', { ascending: true })
-
-        const { data: dbQuestions } = await supabase
-          .from('scenario_questions')
-          .select('*')
-
-        // Fallback to static if DB has no seed data
-        const useDbLessons = dbLessons && dbLessons.length > 0
-        const finalPath = useDbLessons
-          ? dbLessons
-              .filter(l => l.condition === condition && l.position_index !== null)
-              .sort((a, b) => (a.position_index || 0) - (b.position_index || 0))
-              .map(l => {
-                let parsedOptions: string[] | null = null
-                if (l.mid_question_options) {
-                  try {
-                    parsedOptions = typeof l.mid_question_options === 'string'
-                      ? JSON.parse(l.mid_question_options)
-                      : l.mid_question_options
-                  } catch (e) {
-                    parsedOptions = l.mid_question_options
-                  }
-                }
-                return addHeuristicQuestionsToLesson({
-                  id: l.id,
-                  title: l.title,
-                  section: l.section,
-                  youtubeId: l.youtube_id,
-                  durationText: l.duration_text,
-                  durationSeconds: l.duration_seconds,
-                  midQuestionText: l.mid_question_text,
-                  midQuestionOptions: parsedOptions,
-                  midQuestionCorrect: l.mid_question_correct,
-                  endQuestionText: l.end_question_text,
-                  midCheckpointPct: l.mid_checkpoint_pct,
-                  endCheckpointPct: l.end_checkpoint_pct,
-                  notifyCoachOpt1: l.notify_coach_opt_1,
-                  notifyCoachOpt2: l.notify_coach_opt_2,
-                  notifyCoachOpt3: l.notify_coach_opt_3
-                })
-              })
-          : (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
- 
-        const finalGen = useDbLessons
-          ? dbLessons
-              .filter(l => l.condition !== condition || l.position_index === null)
-              .map(l => {
-                let parsedOptions: string[] | null = null
-                if (l.mid_question_options) {
-                  try {
-                    parsedOptions = typeof l.mid_question_options === 'string'
-                      ? JSON.parse(l.mid_question_options)
-                      : l.mid_question_options
-                  } catch (e) {
-                    parsedOptions = l.mid_question_options
-                  }
-                }
-                return addHeuristicQuestionsToLesson({
-                  id: l.id,
-                  title: l.title,
-                  section: l.section,
-                  youtubeId: l.youtube_id,
-                  durationText: l.duration_text,
-                  durationSeconds: l.duration_seconds,
-                  midQuestionText: l.mid_question_text,
-                  midQuestionOptions: parsedOptions,
-                  midQuestionCorrect: l.mid_question_correct,
-                  endQuestionText: l.end_question_text,
-                  midCheckpointPct: l.mid_checkpoint_pct,
-                  endCheckpointPct: l.end_checkpoint_pct,
-                  notifyCoachOpt1: l.notify_coach_opt_1,
-                  notifyCoachOpt2: l.notify_coach_opt_2,
-                  notifyCoachOpt3: l.notify_coach_opt_3
-                })
-              })
-          : generalLibraryLessons.map(addHeuristicQuestionsToLesson)
-
-        setPathwayLessons(finalPath)
-        
-        // Apply progressive escalation weighting to General Library
-        const escalatedFinalGen = scoreAndSortLessonsForProgression(finalGen, isEligibleForAdvanced)
-          .map((item: { lesson: LessonDef; score: number }) => item.lesson)
-        setGeneralLibraryLessonsList(escalatedFinalGen)
-
-        // Map questions
-        const qMap: Record<string, QuestionDef> = {}
-        if (dbQuestions) {
-          dbQuestions.forEach(q => {
-            qMap[q.lesson_id] = {
-              id: q.id,
-              lessonId: q.lesson_id,
-              questionText: q.question_text,
-              options: q.options,
-              correctOption: q.correct_option
-            }
-          })
-        }
-        setQuestionsMap(qMap)
-      } catch (err) {
-        console.error('Failed to load lessons from DB, falling back to static lists:', err)
-        const staticPath = (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
-        const staticGen = generalLibraryLessons.map(addHeuristicQuestionsToLesson)
-        
-        setPathwayLessons(staticPath)
-        
-        // Apply progressive escalation to fallback as well
-        const escalatedStaticGen = scoreAndSortLessonsForProgression(staticGen, isEligibleForAdvanced)
-          .map((item: { lesson: LessonDef; score: number }) => item.lesson)
-        setGeneralLibraryLessonsList(escalatedStaticGen)
+      if (dbQuestions) {
+        dbQuestions.forEach(q => {
+          qMap[q.lesson_id] = {
+            id: q.id,
+            lessonId: q.lesson_id,
+            questionText: q.question_text,
+            options: q.options,
+            correctOption: q.correct_option
+          }
+        })
       }
+      setQuestionsMap(qMap)
+    } catch (err) {
+      console.error('Failed to load lessons from DB, falling back to static lists:', err)
+      const staticPath = (conditionPathways[condition] || conditionPathways['General Fitness']).map(addHeuristicQuestionsToLesson)
+      const staticGen = generalLibraryLessons.map(addHeuristicQuestionsToLesson)
+      
+      setPathwayLessons(staticPath)
+      
+      const escalatedStaticGen = scoreAndSortLessonsForProgression(staticGen, isEligibleForAdvanced)
+        .map((item: { lesson: LessonDef; score: number }) => item.lesson)
+      setGeneralLibraryLessonsList(escalatedStaticGen)
     }
   }
 
@@ -440,7 +365,7 @@ export default function LearnPage() {
         // CODE COMMENT: Seek-forward restriction to prevent bypassing 65%/85% checkpoints.
         // If the user attempts to seek forward past the maximum watched point, snap them back.
         // Bypassed in dev/preview environments for testing convenience.
-        const isProduction = process.env.NODE_ENV === 'production' && !isPreview
+        const isProduction = process.env.NODE_ENV === 'production'
         if (isProduction && currentTime > maxWatchedTimeRef.current + 3) {
           playerRef.current.seekTo(maxWatchedTimeRef.current, true)
           return
@@ -503,7 +428,7 @@ export default function LearnPage() {
   // Helpers to award checkpoint points
   const awardPointsForCheckpoint = async (source: 'lesson_checkpoint_mid' | 'lesson_checkpoint_end') => {
     try {
-      const cpResult = await awardConsistencyPoints(source, isPreview)
+      const cpResult = await awardConsistencyPoints(source, false)
       if (cpResult.tierUpOccurred) {
         setRankUpData({
           oldTier: cpResult.oldTier,
@@ -523,33 +448,22 @@ export default function LearnPage() {
     answerText: string,
     isCorrect: boolean
   ) => {
-    if (isPreview) {
-      const localComps = JSON.parse(localStorage.getItem('preview_completions') || '[]')
-      localComps.push({
-        id: `comp_${Date.now()}`,
-        task_id: `${lessonId}_${checkpointTypeStr}`,
-        task_type: checkpointTypeStr,
-        completed_at: new Date().toISOString()
-      })
-      localStorage.setItem('preview_completions', JSON.stringify(localComps))
-    } else {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          await supabase.from('task_completions').insert({
-            user_id: user.id,
-            task_id: `${lessonId}_${checkpointTypeStr}`,
-            task_type: checkpointTypeStr,
-            duration_seconds: 0,
-            recall_question: questionText,
-            recall_selected: answerText,
-            recall_correct: isCorrect,
-            completed_at: new Date().toISOString()
-          })
-        }
-      } catch (err) {
-        console.error('Failed to log checkpoint completion:', err)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('task_completions').insert({
+          user_id: user.id,
+          task_id: `${lessonId}_${checkpointTypeStr}`,
+          task_type: checkpointTypeStr,
+          duration_seconds: 0,
+          recall_question: questionText,
+          recall_selected: answerText,
+          recall_correct: isCorrect,
+          completed_at: new Date().toISOString()
+        })
       }
+    } catch (err) {
+      console.error('Failed to log checkpoint completion:', err)
     }
   }
 
@@ -599,34 +513,18 @@ export default function LearnPage() {
       if (optionIndex === 2 && (selectedVideo.notifyCoachOpt3 !== false)) shouldNotify = true
 
       if (shouldNotify) {
-        if (isPreview) {
-          const localNotifs = JSON.parse(localStorage.getItem('preview_coach_notifications') || '[]')
-          localNotifs.push({
-            id: `notif_${Date.now()}`,
-            coach_id: 'adaeze-mock-id',
-            type: 'task_choice_alert',
-            patient_id: 'preview-patient-id',
-            patient_name: 'Patient User',
-            lesson_title: selectedVideo.title,
-            selected_choice: selectedAnswer,
-            unread: true,
-            created_at: new Date().toISOString()
-          })
-          localStorage.setItem('preview_coach_notifications', JSON.stringify(localNotifs))
-        } else {
-          supabase.auth.getUser().then(({ data: { user } }) => {
-            if (user && assignedCoachId) {
-              supabase.from('coach_notifications').insert({
-                coach_id: assignedCoachId,
-                type: 'task_choice_alert',
-                patient_id: user.id,
-                unread: true
-              }).then(({ error }) => {
-                if (error) console.error('Error creating coach notification:', error)
-              })
-            }
-          })
-        }
+        supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user && assignedCoachId) {
+            supabase.from('coach_notifications').insert({
+              coach_id: assignedCoachId,
+              type: 'task_choice_alert',
+              patient_id: user.id,
+              unread: true
+            }).then(({ error }) => {
+              if (error) console.error('Error creating coach notification:', error)
+            })
+          }
+        })
       }
 
       if (activePathwayIndex !== null) {
@@ -656,26 +554,22 @@ export default function LearnPage() {
     const nextIndices = [...completedPathwayIndices, index]
     setCompletedPathwayIndices(nextIndices)
 
-    if (isPreview) {
-      localStorage.setItem(`completed_pathway_${selectedCondition}`, JSON.stringify(nextIndices))
-    } else {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          await supabase.from('task_completions').insert({
-            user_id: user.id,
-            task_id: `learn_path_${selectedCondition}_${index}`,
-            task_type: 'lesson_completion',
-            duration_seconds: selectedVideo?.durationSeconds || 0,
-            recall_question: recallQuestion,
-            recall_selected: recallSelected,
-            recall_correct: recallCorrect,
-            completed_at: new Date().toISOString()
-          })
-        }
-      } catch (err) {
-        console.error('Failed to log pathway completion:', err)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('task_completions').insert({
+          user_id: user.id,
+          task_id: `learn_path_${selectedCondition}_${index}`,
+          task_type: 'lesson_completion',
+          duration_seconds: selectedVideo?.durationSeconds || 0,
+          recall_question: recallQuestion,
+          recall_selected: recallSelected,
+          recall_correct: recallCorrect,
+          completed_at: new Date().toISOString()
+        })
       }
+    } catch (err) {
+      console.error('Failed to log pathway completion:', err)
     }
   }
 
@@ -689,33 +583,29 @@ export default function LearnPage() {
     const nextIds = [...completedGenLessonIds, videoId]
     setCompletedGenLessonIds(nextIds)
 
-    if (isPreview) {
-      localStorage.setItem('completed_gen_lessons', JSON.stringify(nextIds))
-    } else {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          await supabase.from('task_completions').insert({
-            user_id: user.id,
-            task_id: videoId,
-            task_type: 'lesson_completion',
-            duration_seconds: selectedVideo?.durationSeconds || 0,
-            recall_question: recallQuestion,
-            recall_selected: recallSelected,
-            recall_correct: recallCorrect,
-            completed_at: new Date().toISOString()
-          })
-        }
-      } catch (err) {
-        console.error('Failed to log general lesson completion:', err)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('task_completions').insert({
+          user_id: user.id,
+          task_id: videoId,
+          task_type: 'lesson_completion',
+          duration_seconds: selectedVideo?.durationSeconds || 0,
+          recall_question: recallQuestion,
+          recall_selected: recallSelected,
+          recall_correct: recallCorrect,
+          completed_at: new Date().toISOString()
+        })
       }
+    } catch (err) {
+      console.error('Failed to log general lesson completion:', err)
     }
   }
 
   // Helper to trigger CP award
   const awardPoints = async () => {
     try {
-      const cpResult = await awardConsistencyPoints('lesson_completion', isPreview)
+      const cpResult = await awardConsistencyPoints('lesson_completion', false)
       if (cpResult.tierUpOccurred) {
         setRankUpData({
           oldTier: cpResult.oldTier,

@@ -9,12 +9,6 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // Bypass redirects in Preview Mode for local review ONLY if not in production
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
-  if (isPreview) {
-    return response
-  }
-
   const { pathname } = request.nextUrl
 
   // Ignore static assets, favicon, Next.js internal files, and authentication callbacks

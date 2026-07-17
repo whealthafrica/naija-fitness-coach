@@ -135,7 +135,6 @@ interface TodayChecklistProps {
 
 export function TodayChecklist({ selectedCondition, assignedCoachName, customTaskList }: TodayChecklistProps) {
   const supabase = createClient()
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([])
   const [activeTask, setActiveTask] = useState<TaskDef | null>(null)
@@ -221,16 +220,6 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     const todayEnd = new Date()
     todayEnd.setHours(23, 59, 59, 999)
 
-    if (isPreview) {
-      const saved = localStorage.getItem(`completions_${selectedCondition}_${todayString}`)
-      if (saved) {
-        setCompletedTaskIds(JSON.parse(saved))
-      } else {
-        setCompletedTaskIds([])
-      }
-      return
-    }
-
     async function fetchCompletions() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -271,7 +260,7 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     }
 
     fetchCompletions()
-  }, [selectedCondition, isPreview])
+  }, [selectedCondition])
 
   // Clear timers on unmount
   useEffect(() => {
@@ -439,31 +428,16 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
       const sugarVal = (selectedCondition === 'Type 2 Diabetes' || selectedCondition === 'Pre-Diabetes') ? parseFloat(vitalsSugar) : null
       const weightVal = vitalsWeight ? parseFloat(vitalsWeight) : null
 
-      if (isPreview) {
-        const savedVitals = localStorage.getItem('preview_vitals_log')
-        const vitals = savedVitals ? JSON.parse(savedVitals) : []
-        const newEntry = {
-          id: `v_${Date.now()}`,
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('vitals_log').insert({
+          user_id: user.id,
           systolic: systolicVal,
           diastolic: diastolicVal,
           blood_sugar: sugarVal,
           weight: weightVal,
           recorded_at: new Date().toISOString()
-        }
-        vitals.push(newEntry)
-        localStorage.setItem('preview_vitals_log', JSON.stringify(vitals))
-      } else {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          await supabase.from('vitals_log').insert({
-            user_id: user.id,
-            systolic: systolicVal,
-            diastolic: diastolicVal,
-            blood_sugar: sugarVal,
-            weight: weightVal,
-            recorded_at: new Date().toISOString()
-          })
-        }
+        })
       }
     }
 
@@ -471,37 +445,24 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     const nextCompletedIds = [...completedTaskIds, activeTask.id]
     setCompletedTaskIds(nextCompletedIds)
 
-    if (isPreview) {
-      localStorage.setItem(`completions_${selectedCondition}_${todayString}`, JSON.stringify(nextCompletedIds))
-      
-      const previewHistory = JSON.parse(localStorage.getItem('preview_completions') || '[]')
-      previewHistory.push({
-        task_id: activeTask.id,
-        task_type: activeTask.type,
-        reflective_choice: selectedLogChoice || null,
-        completed_at: new Date().toISOString()
-      })
-      localStorage.setItem('preview_completions', JSON.stringify(previewHistory))
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        // INTEGRITY RULE: Completion of this task awards CP and logs to task_completions,
-        // but does NOT increase patient_pathway_state.program_progress (and therefore has
-        // no effect on Iron Wallet payout). Self-reported health data is intentionally 
-        // kept financially un-incentivized to prevent falsification.
-        await supabase
-          .from('task_completions')
-          .insert({
-            user_id: user.id,
-            ...payload
-          })
-      }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      // INTEGRITY RULE: Completion of this task awards CP and logs to task_completions,
+      // but does NOT increase patient_pathway_state.program_progress (and therefore has
+      // no effect on Iron Wallet payout). Self-reported health data is intentionally 
+      // kept financially un-incentivized to prevent falsification.
+      await supabase
+        .from('task_completions')
+        .insert({
+          user_id: user.id,
+          ...payload
+        })
     }
 
     // Award Consistency Points and check for tier progression
     try {
       const cpSource = activeTask.type === 'vitals' ? 'vitals_checkin' : 'daily_checkin'
-      const cpResult = await awardConsistencyPoints(cpSource, isPreview)
+      const cpResult = await awardConsistencyPoints(cpSource, false)
       if (cpResult.tierUpOccurred) {
         setRankUpData({
           oldTier: cpResult.oldTier,
@@ -513,13 +474,8 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     }
 
     // Trigger struggle detection signals on completion
-    if (isPreview) {
-      detectStruggle('preview_user_id', true).catch(console.error)
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        detectStruggle(user.id, false).catch(console.error)
-      }
+    if (user) {
+      detectStruggle(user.id, false).catch(console.error)
     }
 
     setActiveTask(null)

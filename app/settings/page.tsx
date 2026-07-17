@@ -8,7 +8,6 @@ import { createClient } from '@/utils/supabase/client'
 import { getActivePauseAction, submitSelfReportAction, updateProfileDetailsAction } from './actions'
 
 export default function SettingsPage() {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const supabase = createClient()
 
   // Profile states
@@ -47,35 +46,6 @@ export default function SettingsPage() {
 
   // Load user profile details
   useEffect(() => {
-    if (isPreview) {
-      setProfile({
-        name: 'Fitness Coach Patient (Preview)',
-        phone: '+234 803 000 0000',
-        email: 'patient@whealthafrica.com',
-        condition: localStorage.getItem('preview_condition') || 'Hypertension',
-        tier: localStorage.getItem('preview_tier') || 'Bronze'
-      })
-      const stored = localStorage.getItem('preview_show_tier_badge')
-      // If the key has never been explicitly set, default to false and persist it.
-      // This prevents a test-session truthy value from masquerading as the default.
-      if (stored === null) {
-        localStorage.setItem('preview_show_tier_badge', 'false')
-        setShowTierBadge(false)
-      } else {
-        setShowTierBadge(stored === 'true')
-      }
-
-      // Check preview pause
-      const previewPauseStr = localStorage.getItem('preview_active_pause')
-      if (previewPauseStr) {
-        const previewPause = JSON.parse(previewPauseStr)
-        if (new Date(previewPause.pause_ends_at) > new Date()) {
-          setActivePause(previewPause)
-        }
-      }
-      return
-    }
-
     async function loadProfileAndPause() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -104,16 +74,11 @@ export default function SettingsPage() {
     }
 
     loadProfileAndPause()
-  }, [isPreview])
+  }, [])
 
   // Handle opt-in tier badge toggle (default off, logs telemetry)
   const handleToggleBadge = async (checked: boolean) => {
     setShowTierBadge(checked)
-
-    if (isPreview) {
-      localStorage.setItem('preview_show_tier_badge', checked.toString())
-      return
-    }
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -139,10 +104,6 @@ export default function SettingsPage() {
 
   // Handle Interactive Sign Out
   const handleSignOut = async () => {
-    if (isPreview) {
-      window.location.href = '/sign-in'
-      return
-    }
     await supabase.auth.signOut()
     window.location.href = '/sign-in'
   }
@@ -153,63 +114,37 @@ export default function SettingsPage() {
     try {
       let exportPayload = {}
 
-      if (isPreview) {
-        // Mock data export + local storage vitals
-        const savedVitals = localStorage.getItem('preview_vitals_log')
-        const vitals = savedVitals ? JSON.parse(savedVitals) : []
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+
+        const { data: completions } = await supabase
+          .from('task_completions')
+          .select('*')
+          .eq('user_id', user.id)
+
+        const { data: vitals } = await supabase
+          .from('vitals_log')
+          .select('*')
+          .eq('user_id', user.id)
+
         exportPayload = {
           app: 'Naija Fitness Coach (Lite)',
           exported_at: new Date().toISOString(),
           compliance_framework: 'NDPR (Nigeria Data Protection Regulation)',
-          profile: {
-            name: profile.name,
-            phone: profile.phone,
-            condition: 'Hypertension'
+          account: {
+            id: user.id,
+            email: user.email,
+            phone: user.phone,
+            created_at: user.created_at
           },
-          completions: [
-            {
-              task_id: 'ht_bp_log',
-              task_type: 'loggable',
-              completed_at: new Date().toISOString(),
-              reflective_choice: 'Normal (<120/80)',
-              low_confidence_flag: false
-            }
-          ],
-          vitals_history: vitals
-        }
-      } else {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data: userProfile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', user.id)
-            .single()
-
-          const { data: completions } = await supabase
-            .from('task_completions')
-            .select('*')
-            .eq('user_id', user.id)
-
-          const { data: vitals } = await supabase
-            .from('vitals_log')
-            .select('*')
-            .eq('user_id', user.id)
-
-          exportPayload = {
-            app: 'Naija Fitness Coach (Lite)',
-            exported_at: new Date().toISOString(),
-            compliance_framework: 'NDPR (Nigeria Data Protection Regulation)',
-            account: {
-              id: user.id,
-              email: user.email,
-              phone: user.phone,
-              created_at: user.created_at
-            },
-            profile: userProfile || {},
-            completions: completions || [],
-            vitals_history: vitals || []
-          }
+          profile: userProfile || {},
+          completions: completions || [],
+          vitals_history: vitals || []
         }
       }
 
@@ -236,31 +171,26 @@ export default function SettingsPage() {
     setIsDeleting(true)
 
     try {
-      if (isPreview) {
-        localStorage.clear()
-        alert('All local preview data and cookies cleared successfully.')
-      } else {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          // Purge vitals explicitly
-          await supabase
-            .from('vitals_log')
-            .delete()
-            .eq('user_id', user.id)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        // Purge vitals explicitly
+        await supabase
+          .from('vitals_log')
+          .delete()
+          .eq('user_id', user.id)
 
-          // Cascade policies will purge task completions when profile is deleted
-          await supabase
-            .from('task_completions')
-            .delete()
-            .eq('user_id', user.id)
+        // Cascade policies will purge task completions when profile is deleted
+        await supabase
+          .from('task_completions')
+          .delete()
+          .eq('user_id', user.id)
 
-          await supabase
-            .from('users')
-            .delete()
-            .eq('id', user.id)
+        await supabase
+          .from('users')
+          .delete()
+          .eq('id', user.id)
 
-          await supabase.auth.signOut()
-        }
+        await supabase.auth.signOut()
       }
       window.location.href = '/sign-in'
     } catch (err) {
@@ -281,30 +211,6 @@ export default function SettingsPage() {
     }
 
     setReportLoading(true)
-    if (isPreview) {
-      const mockPause = {
-        id: `pause_${Date.now()}`,
-        patient_id: 'preview_user_id',
-        reason: reportReason,
-        note: reportNote.trim() || null,
-        pause_starts_at: new Date().toISOString(),
-        pause_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        created_at: new Date().toISOString()
-      }
-      localStorage.setItem('preview_active_pause', JSON.stringify(mockPause))
-      setActivePause(mockPause)
-      setReportSuccess(true)
-      setReportLoading(false)
-      // Close modal after short delay
-      setTimeout(() => {
-        setShowReportModal(false)
-        setReportSuccess(false)
-        setReportReason('')
-        setReportNote('')
-      }, 1000)
-      return
-    }
-
     const res = await submitSelfReportAction(reportReason, reportNote)
     if (res.success) {
       setReportSuccess(true)
@@ -347,22 +253,6 @@ export default function SettingsPage() {
     }
 
     setEditLoading(true)
-    if (isPreview) {
-      setProfile(prev => ({
-        ...prev,
-        name: editName,
-        phone: editPhone,
-        email: editEmail
-      }))
-      setEditSuccess(true)
-      setEditLoading(false)
-      setTimeout(() => {
-        setShowEditModal(false)
-        setEditSuccess(false)
-      }, 1000)
-      return
-    }
-
     const res = await updateProfileDetailsAction(editName, editPhone, editEmail)
     if (res.success) {
       setEditSuccess(true)

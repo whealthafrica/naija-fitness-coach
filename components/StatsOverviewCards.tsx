@@ -11,7 +11,6 @@ interface ConsistencyLeagueCardProps {
 }
 
 export function ConsistencyLeagueCard({ initialCP, initialTier }: ConsistencyLeagueCardProps) {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const supabase = createClient()
 
   const [cp, setCp] = useState(initialCP ?? 0)
@@ -19,14 +18,6 @@ export function ConsistencyLeagueCard({ initialCP, initialTier }: ConsistencyLea
   const [showCpInfo, setShowCpInfo] = useState(false)
 
   useEffect(() => {
-    if (isPreview) {
-      const storedCP = parseInt(localStorage.getItem('preview_cp') || '0', 10)
-      const storedTier = (localStorage.getItem('preview_tier') as TierType) || 'Bronze'
-      setCp(storedCP)
-      setTier(storedTier)
-      return
-    }
-
     async function loadStats() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
@@ -141,7 +132,6 @@ interface CommitmentWalletRowProps {
 }
 
 export function CommitmentWalletRow({ initialProgress }: CommitmentWalletRowProps) {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   const supabase = createClient()
 
   const [programProgress, setProgramProgress] = useState(initialProgress ?? 71) // Default to 71%
@@ -153,57 +143,6 @@ export function CommitmentWalletRow({ initialProgress }: CommitmentWalletRowProp
   const [withdrawnAt, setWithdrawnAt] = useState<string | null>(null)
 
   useEffect(() => {
-    if (isPreview) {
-      let weekVal = 3
-      if (process.env.NODE_ENV !== 'production') {
-        const storedWeek = localStorage.getItem('preview_current_week')
-        if (storedWeek) {
-          weekVal = parseInt(storedWeek, 10)
-        }
-      }
-      setCurrentWeek(weekVal)
-
-      const storedProgress = parseInt(localStorage.getItem('preview_progress') || '75', 10)
-      const storedPremium = localStorage.getItem('preview_premium') === 'true'
-      const storedWithdrawn = localStorage.getItem('preview_is_withdrawn') === 'true'
-      const storedWithdrawnAt = localStorage.getItem('preview_withdrawn_at')
-
-      setProgramProgress(storedProgress)
-      setIsPremium(storedPremium)
-      setIsWithdrawn(storedWithdrawn)
-      setWithdrawnAt(storedWithdrawnAt)
-
-      const deposit = storedPremium ? 20000 : 10000
-      const cap = storedPremium ? 20000 : 10000
-      const payout = calculateIronWalletPayout(storedProgress, deposit, cap)
-      setWalletBalance(payout.finalPayout)
-
-      if (weekVal === 12 && !storedWithdrawn) {
-        const nowStr = new Date().toISOString()
-        localStorage.setItem('preview_is_withdrawn', 'true')
-        localStorage.setItem('preview_withdrawn_at', nowStr)
-
-        const savedLogs = localStorage.getItem('preview_payout_logs')
-        const logs = savedLogs ? JSON.parse(savedLogs) : []
-        logs.push({
-          id: `p_${Date.now()}`,
-          user_id: 'preview_user_id',
-          program_progress: storedProgress,
-          deposit_amount: deposit,
-          calculated_payout: payout.calculatedPayout,
-          final_payout: payout.finalPayout,
-          paystack_transfer_id: `trsf_${Math.random().toString(36).substr(2, 9)}`,
-          payout_status: 'Success',
-          recorded_at: nowStr
-        })
-        localStorage.setItem('preview_payout_logs', JSON.stringify(logs))
-        
-        setIsWithdrawn(true)
-        setWithdrawnAt(nowStr)
-      }
-      return
-    }
-
     async function loadStats() {
       try {
         const { data: { user } } = await supabase.auth.getUser()

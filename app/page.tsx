@@ -9,16 +9,9 @@ import { getAssignedCoach } from '@/lib/coachResolver'
 export const dynamic = 'force-dynamic'
 
 export default async function TodayPage() {
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true' && process.env.NODE_ENV !== 'production'
   let selectedCondition = 'General Fitness'
 
   const cookieStore = await cookies()
-  const assignedCoachName = cookieStore.get('preview_assigned_coach')?.value
-  const previewCookie = cookieStore.get('preview_condition')?.value
-  if (previewCookie) {
-    selectedCondition = decodeURIComponent(previewCookie)
-  }
-
   let coach: { name: string; intro: string; illustration?: string; rankUpQuote: string } | null = null
 
   const supabase = createClient(cookieStore)

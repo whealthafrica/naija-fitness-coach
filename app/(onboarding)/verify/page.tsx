@@ -12,8 +12,7 @@ function VerifyContent() {
   const searchParams = useSearchParams()
   const supabase = createClient()
   
-  const isPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true'
-  const phone = searchParams.get('phone') || (isPreview ? '+2347062459256' : '')
+  const phone = searchParams.get('phone') || ''
   
   // State for separate 6-digit inputs
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
@@ -29,7 +28,6 @@ function VerifyContent() {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true') return
     if (!phone) {
       router.push('/phone')
     }
@@ -50,13 +48,6 @@ function VerifyContent() {
     setError(null)
     setResendStatus(null)
     setLoading(true)
-
-    // Bypass verification in Preview Mode
-    if (process.env.NEXT_PUBLIC_PREVIEW_MODE === 'true') {
-      router.push('/verified')
-      setLoading(false)
-      return
-    }
 
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({

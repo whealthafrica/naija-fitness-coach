@@ -685,7 +685,7 @@ export default function ClientDetailPage() {
               </div>
 
               <div className="text-[10px] text-[#100808]/60 leading-relaxed bg-[#F8F8F0] border border-divider/40 p-3 rounded-xl mt-2">
-                <strong>Note:</strong> Custom coach-assigned tasks earn Consistency Points (CP) but are excluded from the client's Program Progress and payout calculations by design.
+                <strong>Note:</strong> Custom coach-assigned tasks earn Consistency Points (CP) but are excluded from the client&apos;s Program Progress and payout calculations by design.
               </div>
 
               {/* ── Suggested Tasks for Tomorrow ────────────────────────── */}
@@ -761,7 +761,7 @@ export default function ClientDetailPage() {
 
                 {!suggestionsGenerated && !suggestionsLoading && (
                   <p className="text-[11px] text-[#100808]/40 italic">
-                    Pulls 2-4 tasks from the library matched to this client's condition and recent pace.
+                    Pulls 2-4 tasks from the library matched to this client&apos;s condition and recent pace.
                   </p>
                 )}
               </div>

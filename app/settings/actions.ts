@@ -110,7 +110,8 @@ export async function updateProfileDetailsAction(name: string, phone: string, em
     .from('users')
     .update({
       name: name.trim(),
-      phone: formattedPhone
+      phone: formattedPhone,
+      email: email.trim()
     })
     .eq('id', user.id)
 

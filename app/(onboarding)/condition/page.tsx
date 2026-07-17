@@ -6,14 +6,15 @@ import Image from 'next/image'
 import { createClient } from '@/utils/supabase/client'
 import { Button } from '@/components/Button'
 import { motion } from 'framer-motion'
-import { Heart, Activity, Sparkles, Droplet, Dumbbell, Loader2 } from 'lucide-react'
+import { HeartPulse, Moon, Activity, Droplet, Dumbbell, Loader2 } from 'lucide-react'
 
+// Define matching left icons for each condition (unambiguous, consistent stroke, Comfort size)
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  'diabetes': Droplet,
-  'hypertension': Heart,
-  'pcos': Sparkles,
-  'pre-diabetes': Activity,
-  'general-fitness': Dumbbell
+  'diabetes': Droplet, // droplet/glucose icon
+  'hypertension': HeartPulse, // heart-pulse icon
+  'pcos': Moon, // moon/cycle icon
+  'pre-diabetes': Activity, // pulse-line icon (distinct from HeartPulse)
+  'general-fitness': Dumbbell // clear dumbbell icon (unambiguous)
 }
 
 export default function ConditionPage() {
@@ -38,7 +39,7 @@ export default function ConditionPage() {
       try {
         navigator.vibrate(12)
       } catch (e) {
-        // Ignored if blocked by browser security
+        // Ignored
       }
     }
   }
@@ -71,8 +72,6 @@ export default function ConditionPage() {
       'General Fitness': 'amara'
     }
     const coachCode = coachMap[conditionName] || 'amara'
-
-    // Proceed with database update
 
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -116,40 +115,40 @@ export default function ConditionPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen px-6 py-8 justify-start bg-background">
+    <div className="flex flex-col min-h-screen justify-start bg-[#F8F8F0] pb-36">
       {/* Header with Short Illustration and Text */}
-      <div className="space-y-4 text-center mt-1">
-        {/* Short Illustration (five small objects from above - fills 85% width, hugs height dynamically) */}
+      <div className="space-y-4 text-center mt-8 px-6">
         <Image
           src="/condition-header.png"
           alt="Focus area illustration"
           width={400}
           height={80}
           priority
-          className="w-[85%] h-auto mx-auto object-contain block"
+          className="w-[85%] h-auto mx-auto object-contain block animate-fade-in"
         />
         
-        <h2 className="text-xl font-semibold tracking-tight text-text-primary px-4">
-          What are you working on right now?
+        <h2 className="text-2xl font-bold tracking-tight text-[#100808] px-4 font-sans">
+          What are you focused on right now?
         </h2>
       </div>
 
-      {/* Form holds cards and continue button, pushing button to bottom */}
+      {/* Main Form container with layout spacing composition */}
       <form 
         onSubmit={(e) => {
           e.preventDefault()
           handleSave()
         }} 
-        className="flex-1 flex flex-col justify-between w-full max-w-sm mx-auto mt-6"
+        className="w-full max-w-sm mx-auto px-6 mt-10"
       >
-        {/* MCQ Option Stack */}
-        <div className="flex flex-col gap-3 w-full">
+        {/* Option Rows - spacious list layout */}
+        <div className="flex flex-col gap-4 w-full">
           {conditions.map((item) => {
             const isSelected = selectedCondition === item.id
             const isAnySelected = selectedCondition !== null
+            const IconComponent = iconMap[item.id]
             
-            // Determine opacity based on whether any card is active
-            const cardOpacity = !isAnySelected ? 1 : isSelected ? 1 : 0.7
+            // Unselected rows dim to 55-60% when a selection is active
+            const cardOpacity = !isAnySelected ? 1.0 : isSelected ? 1.0 : 0.58
 
             return (
               <motion.button
@@ -158,27 +157,31 @@ export default function ConditionPage() {
                 onClick={() => handleCardClick(item.id)}
                 disabled={loading}
                 
-                // Scale-up-then-settle transition keyframes
-                animate={isSelected ? { scale: [1, 1.01, 1] } : { scale: 1 }}
-                transition={{ duration: 0.25 }}
+                // Scale bump (1.02x) with smooth quick easing transition (150-200ms)
+                animate={isSelected ? { scale: 1.02 } : { scale: 1.0 }}
+                transition={{ duration: 0.18, ease: 'easeInOut' }}
                 
-                className="w-full flex items-center justify-between rounded-2xl border outline-none transition-all duration-200 py-4 px-5 text-left"
+                // Uses card border-radius (rounded-2xl) matching settings rows rather than primary button pills
+                className="w-full flex items-center rounded-2xl border outline-none transition-all duration-200 py-5 px-6 text-left bg-white shadow-sm"
                 style={{
-                  backgroundColor: isSelected ? '#7818180F' : '#FAF4EC', // 6% Deep Maroon vs Warm Cream
-                  borderColor: isSelected ? '#781818' : '#E6DCD0',
+                  backgroundColor: isSelected ? '#7818180F' : '#FFFFFF', // Burgundy wash background
+                  borderColor: isSelected ? '#781818' : '#1008080A',
+                  borderWidth: isSelected ? '1.5px' : '1px',
                   opacity: cardOpacity
                 }}
               >
-                <div className="flex items-center space-x-4">
-                  {/* Radio Indicator */}
-                  <div className={`h-5 w-5 rounded-full border flex items-center justify-center transition-all ${
-                    isSelected ? 'border-[#781818]' : 'border-[#100808]/20'
+                <div className="flex items-center space-x-6 w-full">
+                  {/* Left Comfort legibility Icon */}
+                  {IconComponent && (
+                    <IconComponent 
+                      className={`h-7 w-7 stroke-[1.8] transition-colors duration-200 shrink-0 ${
+                        isSelected ? 'text-[#781818]' : 'text-[#100808]/60'
+                      }`}
+                    />
+                  )}
+                  <span className={`font-bold text-base tracking-tight transition-colors duration-200 ${
+                    isSelected ? 'text-[#781818]' : 'text-[#100808]'
                   }`}>
-                    {isSelected && (
-                      <div className="h-2.5 w-2.5 rounded-full bg-[#781818]" />
-                    )}
-                  </div>
-                  <span className="font-bold text-sm text-[#100808] tracking-tight">
                     {item.name}
                   </span>
                 </div>
@@ -193,25 +196,28 @@ export default function ConditionPage() {
           )}
         </div>
 
-        {/* Deliberate Continue Tap Proceed Button */}
-        <div className="mt-8 w-full">
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            type="submit"
-            disabled={!selectedCondition || loading}
-          >
-            <span className="w-full flex items-center justify-center gap-2">
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin text-on-primary" />
-                  <span>Saving settings...</span>
-                </>
-              ) : (
-                <span>Continue</span>
-              )}
-            </span>
-          </Button>
+        {/* Viewport Pinned Continue Tap Button */}
+        <div className="fixed bottom-0 left-0 right-0 bg-[#F8F8F0]/80 backdrop-blur-md border-t border-[#100808]/5 px-6 py-5 z-40">
+          <div className="max-w-sm mx-auto">
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              type="submit"
+              disabled={!selectedCondition || loading}
+              className="w-full shadow-md"
+            >
+              <span className="w-full flex items-center justify-center gap-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Continue</span>
+                )}
+              </span>
+            </Button>
+          </div>
         </div>
       </form>
     </div>

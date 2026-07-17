@@ -179,11 +179,6 @@ export default function ProgressPage() {
                 <h3 className="text-lg font-bold text-text-primary mt-1">Clinical Records</h3>
               </div>
               <div className="flex items-center gap-2">
-                {isPreview && (
-                  <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 font-bold px-2 py-0.5 rounded uppercase tracking-wider font-mono">
-                    Preview Data
-                  </span>
-                )}
                 <button 
                   onClick={() => setShowClinicalModal(false)}
                   className="p-1 rounded-full hover:bg-divider/30 transition-colors"

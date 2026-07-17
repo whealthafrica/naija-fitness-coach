@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { coachLoginAction } from '../actions'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
+import { Button } from '@/components/Button'
 
 export default function CoachLoginPage() {
   const router = useRouter()
@@ -105,17 +106,20 @@ export default function CoachLoginPage() {
             </div>
 
             <div>
-              <button
+              <Button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-[#781818] hover:opacity-90 focus:outline-none transition-all disabled:opacity-50"
+                variant="primary"
               >
                 {loading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                    <span>Signing in...</span>
+                  </span>
                 ) : (
                   'Sign In'
                 )}
-              </button>
+              </Button>
             </div>
           </form>
         </div>

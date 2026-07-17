@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { useState } from 'react'
+import { Button } from '@/components/Button'
 
 export default function SignInPage() {
   const router = useRouter()
@@ -49,7 +50,7 @@ export default function SignInPage() {
       </div>
 
       {/* 2. Lower Portion - Over Cream Space */}
-      <div className="flex-grow flex flex-col justify-between px-6 pb-8 pt-4 space-y-6 max-w-sm mx-auto w-full">
+      <div className="flex-grow flex flex-col justify-center px-6 pb-8 pt-4 space-y-8 max-w-sm mx-auto w-full">
         {/* App Wordmark */}
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">
@@ -69,23 +70,25 @@ export default function SignInPage() {
         {/* Buttons Stack */}
         <div className="space-y-3 w-full">
           {/* Continue with Google (burgundy fill, cream text) */}
-          <button
+          <Button
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="flex items-center justify-center w-full bg-primary text-background font-bold px-5 py-4 rounded-2xl hover:opacity-95 transition-opacity disabled:opacity-50 text-sm"
+            variant="primary"
+            className="w-full"
           >
             {loading ? 'Connecting...' : 'Continue with Google'}
-          </button>
+          </Button>
 
           {/* Continue with Email (outline burgundy, burgundy text, cream fill) */}
-          <button
+          <Button
             onClick={() => {
               router.push('/email')
             }}
-            className="flex items-center justify-center w-full bg-background border border-primary text-primary font-bold px-5 py-4 rounded-2xl hover:bg-surface transition-colors text-sm"
+            variant="secondary"
+            className="w-full"
           >
             Continue with email
-          </button>
+          </Button>
         </div>
 
       </div>

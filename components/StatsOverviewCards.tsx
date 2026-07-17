@@ -39,7 +39,7 @@ export function ConsistencyLeagueCard({ initialCP, initialTier }: ConsistencyLea
     }
 
     loadStats()
-  }, [isPreview, initialCP, initialTier])
+  }, [initialCP, initialTier])
 
   const getNextTierDetails = (currentCP: number) => {
     let nextTier: TierType | null = null
@@ -134,7 +134,10 @@ interface CommitmentWalletRowProps {
 export function CommitmentWalletRow({ initialProgress }: CommitmentWalletRowProps) {
   const supabase = createClient()
 
-  const [programProgress, setProgramProgress] = useState(initialProgress ?? 71) // Default to 71%
+  // PROGRAM PROGRESS DESIGN LOCK:
+  // Program Progress must NEVER default to a non-zero placeholder value (like 71),
+  // since it directly feeds the real Iron Wallet payout calculation.
+  const [programProgress, setProgramProgress] = useState(initialProgress ?? 0) // Default to 0%
   const [isPremium, setIsPremium] = useState(false)
   const [walletBalance, setWalletBalance] = useState(0)
   const [showWalletModal, setShowWalletModal] = useState(false)
@@ -154,7 +157,11 @@ export function CommitmentWalletRow({ initialProgress }: CommitmentWalletRowProp
           .eq('user_id', user.id)
           .single()
 
-        let progressVal = 71
+        // PROGRAM PROGRESS DESIGN LOCK:
+        // Program Progress must NEVER default to a non-zero placeholder value (like 71),
+        // since it directly feeds the real Iron Wallet payout calculation. If a record is missing,
+        // it must fail safe to 0%.
+        let progressVal = 0
         let startDate = new Date()
         if (state) {
           progressVal = Math.round(state.program_progress || 0)
@@ -230,7 +237,7 @@ export function CommitmentWalletRow({ initialProgress }: CommitmentWalletRowProp
     }
 
     loadStats()
-  }, [isPreview, initialProgress])
+  }, [initialProgress])
 
   const depositAmount = isPremium ? 100000 : 60000
 

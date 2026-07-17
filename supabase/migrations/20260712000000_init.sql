@@ -118,6 +118,13 @@ begin
     coalesce(new.phone, ''),
     coalesce(new.raw_user_meta_data->>'name', 'New Patient')
   );
+  
+  -- PROGRAM PROGRESS DESIGN LOCK:
+  -- Program Progress must NEVER default to a non-zero placeholder value,
+  -- since it directly feeds the real Iron Wallet payout calculation.
+  insert into public.patient_pathway_state (user_id, rolling_completion_rate)
+  values (new.id, 0.00);
+  
   return new;
 end;
 $$ language plpgsql security definer;

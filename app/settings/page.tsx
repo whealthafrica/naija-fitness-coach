@@ -52,7 +52,7 @@ export default function SettingsPage() {
 
       const { data: userProfile } = await supabase
         .from('users')
-        .select('name, phone, show_tier_badge, tier, condition')
+        .select('name, phone, show_tier_badge, tier, condition, email')
         .eq('id', user.id)
         .single()
 
@@ -60,7 +60,7 @@ export default function SettingsPage() {
         setProfile({
           name: userProfile.name || 'NFC Member',
           phone: userProfile.phone || user.phone || 'No phone recorded',
-          email: user.email || '',
+          email: userProfile.email || '',
           condition: userProfile.condition || 'Hypertension',
           tier: userProfile.tier || 'Bronze'
         })
@@ -260,7 +260,7 @@ export default function SettingsPage() {
       if (user) {
         const { data: userProfile } = await supabase
           .from('users')
-          .select('name, phone, condition, tier, show_tier_badge')
+          .select('name, phone, condition, tier, show_tier_badge, email')
           .eq('id', user.id)
           .single()
 
@@ -268,7 +268,7 @@ export default function SettingsPage() {
           setProfile({
             name: userProfile.name || 'NFC Member',
             phone: userProfile.phone || user.phone || 'No phone recorded',
-            email: user.email || '',
+            email: userProfile.email || '',
             condition: userProfile.condition || 'Hypertension',
             tier: userProfile.tier || 'Bronze'
           })

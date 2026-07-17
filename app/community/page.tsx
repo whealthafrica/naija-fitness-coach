@@ -144,10 +144,26 @@ export default function CommunityPage() {
         if (!user) return
 
         // 1. Fetch real community posts from DB
-        const { data: dbPosts } = await supabaseInstance
+        const { data: dbPosts, error: dbPostsError } = await supabaseInstance
           .from('community_posts')
-          .select('*, coaches(name)')
+          .select('*')
           .order('created_at', { ascending: false })
+
+        if (dbPostsError) {
+          console.error('Error fetching community posts:', dbPostsError)
+        }
+
+        // Fetch coaches to join in-memory since relation-less UUID author_id is used
+        const { data: dbCoaches } = await supabaseInstance
+          .from('coaches')
+          .select('id, name')
+
+        const coachesMap = new Map<string, string>()
+        if (dbCoaches) {
+          dbCoaches.forEach((c: any) => {
+            coachesMap.set(c.id, c.name)
+          })
+        }
 
         // 2. Fetch system achievements from telemetry_events
         const { data: telemetryEvents } = await supabaseInstance
@@ -166,7 +182,7 @@ export default function CommunityPage() {
         // Parse DB posts
         const parsedDbPosts: FeedItem[] = (dbPosts || []).map((post: any) => {
           const postId = post.id
-          const authorName = post.coaches?.name || 'Coach'
+          const authorName = post.author_type === 'coach' ? (coachesMap.get(post.author_id) || 'Coach') : 'Coach'
           
           const loveCount = reactions.filter(r => r.community_post_id === postId && r.reaction_type === 'love').length
           const celebrateCount = reactions.filter(r => r.community_post_id === postId && r.reaction_type === 'celebrate').length
@@ -236,6 +252,9 @@ export default function CommunityPage() {
 
   // Handle post reaction increments and award CP with persistence and anti-farming (Section 8.6)
   const handleReact = async (postId: string, type: 'love' | 'celebrate' | 'inspired') => {
+    // Disable reaction queries on mock posts entirely
+    if (postId.includes('mock')) return
+
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -247,40 +266,89 @@ export default function CommunityPage() {
       const isTelemetry = targetPost.role === 'System'
       const queryCol = isTelemetry ? 'telemetry_event_id' : 'community_post_id'
 
-      // Check if a reaction row already exists
-      const { data: existingReaction } = await supabase
+      // Check if any reaction already exists for this post/user (select * to avoid maybeSingle multi-row crash)
+      const { data: userReactions, error: fetchError } = await supabase
         .from('community_reactions')
         .select('*')
         .eq(queryCol, postId)
         .eq('user_id', user.id)
-        .eq('reaction_type', type)
-        .maybeSingle()
 
-      if (!existingReaction) {
-        // First insert ever: award CP and save cp_awarded = true, active = true
-        const cpResult = await awardConsistencyPoints('community_reaction', false)
-        if (cpResult.tierUpOccurred) {
-          setRankUpData({
-            oldTier: cpResult.oldTier,
-            newTier: cpResult.newTier
-          })
+      if (fetchError) {
+        console.error('Failed to fetch reactions:', fetchError.message)
+        alert('Failed to check reactions. Please try again.')
+        return
+      }
+
+      const reactionsList = userReactions || []
+      const activeReaction = reactionsList.find(r => r.active)
+      const targetReaction = reactionsList.find(r => r.reaction_type === type)
+
+      if (activeReaction && activeReaction.reaction_type === type) {
+        // Tapping the same type: toggle active to false (un-react)
+        const { error: updateError } = await supabase
+          .from('community_reactions')
+          .update({ active: false })
+          .eq('id', activeReaction.id)
+
+        if (updateError) {
+          console.error('Failed to deactivate reaction:', updateError.message)
+          alert('Failed to update reaction. Please try again.')
+          return
+        }
+      } else {
+        // Tapping a different type OR reactivating an inactive reaction
+        if (activeReaction) {
+          // Deactivate the currently active reaction first to avoid unique constraint conflict
+          const { error: deactivateError } = await supabase
+            .from('community_reactions')
+            .update({ active: false })
+            .eq('id', activeReaction.id)
+
+          if (deactivateError) {
+            console.error('Failed to deactivate current reaction:', deactivateError.message)
+            alert('Failed to update reaction. Please try again.')
+            return
+          }
         }
 
-        await supabase
-          .from('community_reactions')
-          .insert({
-            [queryCol]: postId,
-            user_id: user.id,
-            reaction_type: type,
-            cp_awarded: true,
-            active: true
-          })
-      } else {
-        // Toggle active status without modifying cp_awarded or re-awarding CP (anti-farming)
-        await supabase
-          .from('community_reactions')
-          .update({ active: !existingReaction.active })
-          .eq('id', existingReaction.id)
+        if (targetReaction) {
+          // Reactivate the existing row for this type
+          const { error: activateError } = await supabase
+            .from('community_reactions')
+            .update({ active: true })
+            .eq('id', targetReaction.id)
+
+          if (activateError) {
+            console.error('Failed to activate target reaction:', activateError.message)
+            alert('Failed to update reaction. Please try again.')
+            return
+          }
+        } else {
+          // Insert a new row for this type
+          const cpResult = await awardConsistencyPoints('community_reaction', false)
+          if (cpResult.tierUpOccurred) {
+            setRankUpData({
+              oldTier: cpResult.oldTier,
+              newTier: cpResult.newTier
+            })
+          }
+
+          const { error: insertError } = await supabase
+            .from('community_reactions')
+            .insert({
+              [queryCol]: postId,
+              user_id: user.id,
+              reaction_type: type,
+              cp_awarded: true,
+              active: true
+            })
+
+          if (insertError) {
+            console.error('Failed to insert new reaction:', insertError.message)
+            alert('Failed to save reaction. Please try again.')
+            return
+          }
+        }
       }
 
       // Re-fetch all active reactions from DB to update UI counts
@@ -436,40 +504,49 @@ export default function CommunityPage() {
                 
                 {/* Love Reaction */}
                 <button
-                  onClick={() => handleReact(post.id, 'love')}
+                  onClick={() => !post.id.includes('mock') && handleReact(post.id, 'love')}
+                  disabled={post.id.includes('mock')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                    post.userReaction === 'love'
-                      ? 'border-[#E6A8A8] bg-[#FAF0F0] text-[#B83D3D]'
-                      : 'border-divider/50 bg-transparent text-text-secondary hover:bg-divider/10'
+                    post.id.includes('mock')
+                      ? 'border-divider/30 bg-transparent text-text-secondary/50 opacity-60 cursor-not-allowed'
+                      : post.userReaction === 'love'
+                        ? 'border-[#E6A8A8] bg-[#FAF0F0] text-[#B83D3D]'
+                        : 'border-divider/50 bg-transparent text-text-secondary hover:bg-divider/10'
                   }`}
                 >
-                  <Heart className={`h-3.5 w-3.5 stroke-[1.5] ${post.userReaction === 'love' ? 'fill-current' : ''}`} />
+                  <Heart className={`h-3.5 w-3.5 stroke-[1.5] ${post.userReaction === 'love' && !post.id.includes('mock') ? 'fill-current' : ''}`} />
                   <span>{post.reactions.love}</span>
                 </button>
 
                 {/* Celebrate Reaction */}
                 <button
-                  onClick={() => handleReact(post.id, 'celebrate')}
+                  onClick={() => !post.id.includes('mock') && handleReact(post.id, 'celebrate')}
+                  disabled={post.id.includes('mock')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                    post.userReaction === 'celebrate'
-                      ? 'border-[#E6A8A8] bg-[#FAF0F0] text-primary'
-                      : 'border-divider/50 bg-transparent text-text-secondary hover:bg-divider/10'
+                    post.id.includes('mock')
+                      ? 'border-divider/30 bg-transparent text-text-secondary/50 opacity-60 cursor-not-allowed'
+                      : post.userReaction === 'celebrate'
+                        ? 'border-[#E6A8A8] bg-[#FAF0F0] text-primary'
+                        : 'border-divider/50 bg-transparent text-text-secondary hover:bg-divider/10'
                   }`}
                 >
-                  <Sparkles className={`h-3.5 w-3.5 stroke-[1.5] ${post.userReaction === 'celebrate' ? 'fill-current' : ''}`} />
+                  <Sparkles className={`h-3.5 w-3.5 stroke-[1.5] ${post.userReaction === 'celebrate' && !post.id.includes('mock') ? 'fill-current' : ''}`} />
                   <span>{post.reactions.celebrate}</span>
                 </button>
 
                 {/* Inspired Reaction */}
                 <button
-                  onClick={() => handleReact(post.id, 'inspired')}
+                  onClick={() => !post.id.includes('mock') && handleReact(post.id, 'inspired')}
+                  disabled={post.id.includes('mock')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                    post.userReaction === 'inspired'
-                      ? 'border-[#9CAF88]/50 bg-[#9CAF88]/5 text-[#5E6E4D]'
-                      : 'border-divider/50 bg-transparent text-text-secondary hover:bg-divider/10'
+                    post.id.includes('mock')
+                      ? 'border-divider/30 bg-transparent text-text-secondary/50 opacity-60 cursor-not-allowed'
+                      : post.userReaction === 'inspired'
+                        ? 'border-[#9CAF88]/50 bg-[#9CAF88]/5 text-[#5E6E4D]'
+                        : 'border-divider/50 bg-transparent text-text-secondary hover:bg-divider/10'
                   }`}
                 >
-                  <Lightbulb className={`h-3.5 w-3.5 stroke-[1.5] ${post.userReaction === 'inspired' ? 'fill-current' : ''}`} />
+                  <Lightbulb className={`h-3.5 w-3.5 stroke-[1.5] ${post.userReaction === 'inspired' && !post.id.includes('mock') ? 'fill-current' : ''}`} />
                   <span>{post.reactions.inspired}</span>
                 </button>
 

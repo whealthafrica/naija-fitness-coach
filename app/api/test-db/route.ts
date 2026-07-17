@@ -25,6 +25,9 @@ export async function GET() {
       })
     }
 
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'User object is null.' })
+    }
     createdUser = user
 
     // 2. Fetch the corresponding profile in public.users

@@ -39,12 +39,22 @@ export default function ProgressPage() {
       startDate.setDate(startDate.getDate() - 27)
       startDate.setHours(0, 0, 0, 0)
 
-      // 1. Fetch Task Completions
-      const { data: completions } = await supabase
-        .from('task_completions')
-        .select('completed_at')
-        .eq('user_id', user.id)
-        .gte('completed_at', startDate.toISOString())
+      // Fetch completions and vitals in parallel
+      const [completionsRes, vitalsRes] = await Promise.all([
+        supabase
+          .from('task_completions')
+          .select('completed_at')
+          .eq('user_id', user.id)
+          .gte('completed_at', startDate.toISOString()),
+        supabase
+          .from('vitals_log')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('recorded_at', { ascending: false })
+      ])
+
+      const completions = completionsRes.data
+      const vitals = vitalsRes.data
 
       const completedDatesSet = new Set<string>()
       if (completions) {
@@ -62,13 +72,6 @@ export default function ProgressPage() {
         history.push(completedDatesSet.has(dateStr))
       }
       setCompletedDays(history)
-
-      // 2. Fetch Vitals Log
-      const { data: vitals } = await supabase
-        .from('vitals_log')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('recorded_at', { ascending: false })
 
       if (vitals) {
         setVitalsHistory(vitals)

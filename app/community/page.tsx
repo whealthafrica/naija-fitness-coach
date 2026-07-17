@@ -144,20 +144,34 @@ export default function CommunityPage() {
         const { data: { user } } = await supabaseInstance.auth.getUser()
         if (!user) return
 
-        // 1. Fetch real community posts from DB
-        const { data: dbPosts, error: dbPostsError } = await supabaseInstance
-          .from('community_posts')
-          .select('*')
-          .order('created_at', { ascending: false })
+        // Fetch posts, coaches, announcements, and reactions concurrently
+        const [postsRes, coachesRes, telemetryRes, reactionsRes] = await Promise.all([
+          supabaseInstance
+            .from('community_posts')
+            .select('*')
+            .order('created_at', { ascending: false }),
+          supabaseInstance
+            .from('coaches')
+            .select('id, name'),
+          supabaseInstance
+            .from('telemetry_events')
+            .select('*')
+            .eq('event_type', 'system_announcement'),
+          supabaseInstance
+            .from('community_reactions')
+            .select('*')
+            .eq('active', true)
+        ])
+
+        const dbPosts = postsRes.data
+        const dbPostsError = postsRes.error
+        const dbCoaches = coachesRes.data
+        const telemetryEvents = telemetryRes.data
+        const dbReactions = reactionsRes.data
 
         if (dbPostsError) {
           console.error('Error fetching community posts:', dbPostsError)
         }
-
-        // Fetch coaches to join in-memory since relation-less UUID author_id is used
-        const { data: dbCoaches } = await supabaseInstance
-          .from('coaches')
-          .select('id, name')
 
         const coachesMap = new Map<string, string>()
         if (dbCoaches) {
@@ -165,18 +179,6 @@ export default function CommunityPage() {
             coachesMap.set(c.id, c.name)
           })
         }
-
-        // 2. Fetch system achievements from telemetry_events
-        const { data: telemetryEvents } = await supabaseInstance
-          .from('telemetry_events')
-          .select('*')
-          .eq('event_type', 'system_announcement')
-
-        // 3. Fetch all active reactions from DB
-        const { data: dbReactions } = await supabaseInstance
-          .from('community_reactions')
-          .select('*')
-          .eq('active', true)
 
         const reactions = dbReactions || []
 

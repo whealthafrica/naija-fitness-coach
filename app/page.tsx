@@ -21,22 +21,26 @@ export default async function TodayPage() {
 
   // B. Check for database profile
   if (user) {
-    const { data: profile } = await supabase
-      .from('users')
-      .select('condition, coach_id')
-      .eq('id', user.id)
-      .single()
+    const [profileRes, pathwayStateRes] = await Promise.all([
+      supabase
+        .from('users')
+        .select('condition, coach_id')
+        .eq('id', user.id)
+        .single(),
+      supabase
+        .from('patient_pathway_state')
+        .select('custom_task_list')
+        .eq('user_id', user.id)
+        .single()
+    ])
+
+    const profile = profileRes.data
+    const pathwayState = pathwayStateRes.data
     
     if (profile?.condition) {
       selectedCondition = profile.condition
     }
 
-    // Fetch custom task list override if it exists
-    const { data: pathwayState } = await supabase
-      .from('patient_pathway_state')
-      .select('custom_task_list')
-      .eq('user_id', user.id)
-      .single()
     if (pathwayState?.custom_task_list) {
       customTaskList = pathwayState.custom_task_list as any[]
     }

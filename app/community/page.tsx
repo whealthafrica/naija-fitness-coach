@@ -256,6 +256,15 @@ export default function CommunityPage() {
     // Disable reaction queries on mock posts entirely
     if (postId.includes('mock')) return
 
+    // Debounce: prevent rapid multi-taps for the same post in-flight
+    if (reactingPostIds.has(postId)) return
+
+    setReactingPostIds(prev => {
+      const next = new Set(prev)
+      next.add(postId)
+      return next
+    })
+
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -382,6 +391,12 @@ export default function CommunityPage() {
 
     } catch (err) {
       console.error('Failed to handle reaction persistence:', err)
+    } finally {
+      setReactingPostIds(prev => {
+        const next = new Set(prev)
+        next.delete(postId)
+        return next
+      })
     }
   }
 

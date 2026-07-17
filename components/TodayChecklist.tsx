@@ -614,14 +614,6 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
                       <Button variant="secondary" disabled className="w-full">
                         Ongoing...
                       </Button>
-                      {isPreview && (
-                        <button 
-                          onClick={skipTimedTaskTimer} 
-                          className="text-[10px] text-text-secondary/70 hover:text-text-secondary transition-colors underline"
-                        >
-                          Dev Bypass: Skip Timer
-                        </button>
-                      )}
                     </div>
                   </div>
                 ) : (
@@ -753,15 +745,6 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
                       <Button variant="secondary" disabled className="w-full">
                         Ongoing...
                       </Button>
-                      {/* Quiet developer bypass for fast manual verification */}
-                      {isPreview && (
-                        <button 
-                          onClick={skipTimedTaskTimer} 
-                          className="text-[10px] text-text-secondary/70 hover:text-text-secondary transition-colors underline"
-                        >
-                          Dev Bypass: Skip Timer
-                        </button>
-                      )}
                     </div>
                   </div>
                 ) : (

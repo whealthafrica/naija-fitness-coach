@@ -32,7 +32,7 @@ import {
   HelpCircle
 } from 'lucide-react'
 
-export default function ClientDetailPage() {
+function ClientDetailContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const clientId = searchParams.get('id')
@@ -985,5 +985,17 @@ export default function ClientDetailPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function ClientDetailPage() {
+  return (
+    <React.Suspense fallback={
+      <div className="min-h-screen bg-[#F8F8F0] flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#781818]" />
+      </div>
+    }>
+      <ClientDetailContent />
+    </React.Suspense>
   )
 }

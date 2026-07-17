@@ -5,6 +5,6 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 export const createClient = () =>
   createBrowserClient(
-    supabaseUrl!,
-    supabaseKey!,
+    supabaseUrl || "https://placeholder.supabase.co",
+    supabaseKey || "placeholder-key",
   );

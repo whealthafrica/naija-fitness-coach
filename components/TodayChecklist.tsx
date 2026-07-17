@@ -1,7 +1,7 @@
 'use client'
 
 // Built against PRD Section 8.2 (Today Checklist & Task Completion Verification)
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import { CheckCircle2, Play, Check, Camera, Timer, X, Loader2, Award } from 'lucide-react'
 import { Button } from '@/components/Button'
@@ -127,6 +127,80 @@ function WeightRuler({ value, onChange }: { value: string; onChange: (val: strin
   )
 }
 
+interface TaskTimerProps {
+  durationSeconds: number
+  onComplete: () => void
+  label?: string
+}
+
+function TaskTimer({ durationSeconds, onComplete, label = 'Keep going! Stay focused...' }: TaskTimerProps) {
+  const [timeLeft, setTimeLeft] = useState(durationSeconds)
+
+  useEffect(() => {
+    if (timeLeft > 0) {
+      const interval = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(interval)
+            onComplete()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+      return () => clearInterval(interval)
+    }
+  }, [timeLeft, onComplete])
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  return (
+    <div className="text-center py-8 space-y-4">
+      <div className="text-4xl font-bold tracking-tight text-text-primary tabular-nums font-mono">
+        {formatTime(timeLeft)}
+      </div>
+      <p className="text-xs text-text-secondary">{label}</p>
+      <div className="flex flex-col items-center space-y-2">
+        <Button variant="secondary" disabled className="w-full">
+          Ongoing...
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+interface TaskCardProps {
+  task: TaskDef
+  isDone: boolean
+  onClick: () => void
+  formatText: (text: string | undefined) => string
+}
+
+const TaskCard = React.memo(function TaskCard({ task, isDone, onClick, formatText }: TaskCardProps) {
+  return (
+    <div
+      onClick={isDone ? undefined : onClick}
+      className={`flex items-start justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors ${isDone ? 'cursor-default' : 'cursor-pointer'}`}
+    >
+      <div className="flex items-start space-x-3 w-full">
+        <CheckCircle2
+          className={`h-5 w-5 shrink-0 mt-0.5 ${isDone ? 'text-success' : 'text-text-secondary/40'}`}
+        />
+        <div>
+          <h4 className={`text-sm font-semibold leading-snug ${isDone ? 'line-through text-text-secondary/50' : 'text-text-primary'}`}>
+            {formatText(task.title)}
+          </h4>
+          <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{formatText(task.desc)}</p>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 interface TodayChecklistProps {
   selectedCondition: string
   assignedCoachName?: string
@@ -144,7 +218,9 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
   
   // Timer states
   const [timerActive, setTimerActive] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(0)
+
+  // Cache for formatted task text to prevent regex overhead
+  const formattedTextCache = useRef<Record<string, string>>({})
   const [recallUnlocked, setRecallUnlocked] = useState(false)
   const [selectedRecallIndex, setSelectedRecallIndex] = useState<number | null>(null)
 
@@ -205,13 +281,19 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
   // is fetched from the DB in the completions effect below.
   const coachName = assignedCoachName || defaultCoach.name
 
-  // Helper to dynamically format tasks with the current coach name
-  const formatTaskText = (text: string | undefined): string => {
+  // Helper to dynamically format tasks with the current coach name (memoized)
+  const formatTaskText = useCallback((text: string | undefined): string => {
     if (!text) return ''
-    return text
+    const cacheKey = `${coachName}_${text}`
+    if (formattedTextCache.current[cacheKey]) {
+      return formattedTextCache.current[cacheKey]
+    }
+    const formatted = text
       .replace(/(Adaeze|Tunde|Ngozi|Emeka|Amara|Chioma|Obinna)'s/g, `${coachName}'s`)
       .replace(/(Adaeze|Tunde|Ngozi|Emeka|Amara|Chioma|Obinna)/g, coachName)
-  }
+    formattedTextCache.current[cacheKey] = formatted
+    return formatted
+  }, [coachName])
 
   // Load completions on mount / condition switch
   useEffect(() => {
@@ -269,24 +351,6 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     }
   }, [])
 
-  // Timer tick down
-  useEffect(() => {
-    if (timerActive && timeLeft > 0) {
-      const interval = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(interval)
-            setTimerActive(false)
-            setRecallUnlocked(true)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-      return () => clearInterval(interval)
-    }
-  }, [timerActive, timeLeft])
-
   // Handle task click to initiate verification flow
   const handleTaskClick = (task: TaskDef) => {
     if (completedTaskIds.includes(task.id)) return // Already completed, avoid double submission
@@ -316,27 +380,12 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
       setVitalsStep(1)
       setVitalsWeight('70.0')
     }
-
-    if (task.type === 'timed') {
-      setTimeLeft(task.duration || 15)
-    }
-
-    if (task.type === 'TIMER') {
-      setTimeLeft((task.durationMinutes || 10) * 60)
-    }
   }
 
   // Timed task: Start Timer
   const startTimedTask = () => {
     setTimerActive(true)
     taskStartedAt.current = Date.now()
-  }
-
-  // Timed task: Skip Timer (Dev/Preview Mode shortcut)
-  const skipTimedTaskTimer = () => {
-    setTimerActive(false)
-    setTimeLeft(0)
-    setRecallUnlocked(true)
   }
 
   // Handle Photo selection
@@ -481,13 +530,6 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     setActiveTask(null)
   }
 
-  // Format time display
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-
   return (
     <div className="space-y-6">
       {/* Category 1: Pathway Steps */}
@@ -504,23 +546,13 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
             dataset.pathway.map((task) => {
               const isDone = completedTaskIds.includes(task.id)
               return (
-                <div
+                <TaskCard
                   key={task.id}
+                  task={task}
+                  isDone={isDone}
                   onClick={() => handleTaskClick(task)}
-                  className={`flex items-start justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors ${isDone ? 'cursor-default' : 'cursor-pointer'}`}
-                >
-                  <div className="flex items-start space-x-3 w-full">
-                    <CheckCircle2
-                      className={`h-5 w-5 shrink-0 mt-0.5 ${isDone ? 'text-success' : 'text-text-secondary/40'}`}
-                    />
-                    <div>
-                      <h4 className={`text-sm font-semibold leading-snug ${isDone ? 'line-through text-text-secondary/50' : 'text-text-primary'}`}>
-                        {formatTaskText(task.title)}
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{formatTaskText(task.desc)}</p>
-                    </div>
-                  </div>
-                </div>
+                  formatText={formatTaskText}
+                />
               )
             })
           )}
@@ -541,23 +573,13 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
             dataset.coach.map((task) => {
               const isDone = completedTaskIds.includes(task.id)
               return (
-                <div
+                <TaskCard
                   key={task.id}
+                  task={task}
+                  isDone={isDone}
                   onClick={() => handleTaskClick(task)}
-                  className={`flex items-start justify-between rounded-2xl bg-surface p-4 border border-divider/50 hover:border-primary/20 transition-colors ${isDone ? 'cursor-default' : 'cursor-pointer'}`}
-                >
-                  <div className="flex items-start space-x-3 w-full">
-                    <CheckCircle2
-                      className={`h-5 w-5 shrink-0 mt-0.5 ${isDone ? 'text-success' : 'text-text-secondary/40'}`}
-                    />
-                    <div>
-                      <h4 className={`text-sm font-semibold leading-snug ${isDone ? 'line-through text-text-secondary/50' : 'text-text-primary'}`}>
-                        {formatTaskText(task.title)}
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{formatTaskText(task.desc)}</p>
-                    </div>
-                  </div>
-                </div>
+                  formatText={formatTaskText}
+                />
               )
             })
           )}
@@ -605,17 +627,14 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
                     </Button>
                   </div>
                 ) : timerActive ? (
-                  <div className="text-center py-8 space-y-4">
-                    <div className="text-4xl font-bold tracking-tight text-text-primary tabular-nums font-mono">
-                      {formatTime(timeLeft)}
-                    </div>
-                    <p className="text-xs text-text-secondary">Keep going! Stay focused...</p>
-                    <div className="flex flex-col items-center space-y-2">
-                      <Button variant="secondary" disabled className="w-full">
-                        Ongoing...
-                      </Button>
-                    </div>
-                  </div>
+                  <TaskTimer
+                    durationSeconds={(activeTask.durationMinutes || 10) * 60}
+                    onComplete={() => {
+                      setTimerActive(false)
+                      setRecallUnlocked(true)
+                    }}
+                    label="Keep going! Stay focused..."
+                  />
                 ) : (
                   <div className="space-y-4">
                     <p className="text-sm font-semibold text-text-primary leading-tight text-center">
@@ -632,6 +651,7 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
                 )}
               </div>
             )}
+
 
             {/* FLOW: SLIDER TASK */}
             {activeTask.type === 'SLIDER' && (
@@ -735,18 +755,16 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
                       <span>Start Exercise</span>
                     </Button>
                   </div>
+
                 ) : timerActive ? (
-                  <div className="text-center py-8 space-y-4">
-                    <div className="text-4xl font-bold tracking-tight text-text-primary tabular-nums">
-                      {formatTime(timeLeft)}
-                    </div>
-                    <p className="text-xs text-text-secondary">Keep breathing and hold the stretch postures...</p>
-                    <div className="flex flex-col items-center space-y-2">
-                      <Button variant="secondary" disabled className="w-full">
-                        Ongoing...
-                      </Button>
-                    </div>
-                  </div>
+                  <TaskTimer
+                    durationSeconds={activeTask.duration || 15}
+                    onComplete={() => {
+                      setTimerActive(false)
+                      setRecallUnlocked(true)
+                    }}
+                    label="Keep breathing and hold the stretch postures..."
+                  />
                 ) : (
                   // Recall Question (Shown silently after timer hits 0)
                   <div className="space-y-4">

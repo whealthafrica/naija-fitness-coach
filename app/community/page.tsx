@@ -37,6 +37,7 @@ export default function CommunityPage() {
 
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [announcementsLoading, setAnnouncementsLoading] = useState(false)
+  const [reactingPostIds, setReactingPostIds] = useState<Set<string>>(new Set())
 
   // Load upcoming coach events
   useEffect(() => {
@@ -283,34 +284,34 @@ export default function CommunityPage() {
       const activeReaction = reactionsList.find(r => r.active)
       const targetReaction = reactionsList.find(r => r.reaction_type === type)
 
-      if (activeReaction && activeReaction.reaction_type === type) {
-        // Tapping the same type: toggle active to false (un-react)
-        const { error: updateError } = await supabase
-          .from('community_reactions')
-          .update({ active: false })
-          .eq('id', activeReaction.id)
-
-        if (updateError) {
-          console.error('Failed to deactivate reaction:', updateError.message)
-          alert('Failed to update reaction. Please try again.')
-          return
-        }
-      } else {
-        // Tapping a different type OR reactivating an inactive reaction
-        if (activeReaction) {
-          // Deactivate the currently active reaction first to avoid unique constraint conflict
-          const { error: deactivateError } = await supabase
+      if (activeReaction) {
+        if (activeReaction.reaction_type === type) {
+          // Tapping the same type: toggle active to false (un-react)
+          const { error: updateError } = await supabase
             .from('community_reactions')
             .update({ active: false })
             .eq('id', activeReaction.id)
 
-          if (deactivateError) {
-            console.error('Failed to deactivate current reaction:', deactivateError.message)
+          if (updateError) {
+            console.error('Failed to deactivate reaction:', updateError.message)
+            alert('Failed to update reaction. Please try again.')
+            return
+          }
+        } else {
+          // Tapping a different type: update the type directly on the active row in a single write!
+          const { error: updateError } = await supabase
+            .from('community_reactions')
+            .update({ reaction_type: type })
+            .eq('id', activeReaction.id)
+
+          if (updateError) {
+            console.error('Failed to switch reaction:', updateError.message)
             alert('Failed to update reaction. Please try again.')
             return
           }
         }
-
+      } else {
+        // No active reaction: either reactivate an inactive row or insert a new one
         if (targetReaction) {
           // Reactivate the existing row for this type
           const { error: activateError } = await supabase
@@ -351,10 +352,11 @@ export default function CommunityPage() {
         }
       }
 
-      // Re-fetch all active reactions from DB to update UI counts
+      // Re-fetch active reactions from DB for this specific post/event only (targeted query)
       const { data: dbReactions } = await supabase
         .from('community_reactions')
         .select('*')
+        .eq(queryCol, postId)
         .eq('active', true)
 
       const reactions = dbReactions || []
@@ -363,11 +365,11 @@ export default function CommunityPage() {
         prevItems.map(post => {
           if (post.id !== postId) return post
 
-          const loveCount = reactions.filter(r => r[queryCol] === postId && r.reaction_type === 'love').length
-          const celebrateCount = reactions.filter(r => r[queryCol] === postId && r.reaction_type === 'celebrate').length
-          const inspiredCount = reactions.filter(r => r[queryCol] === postId && r.reaction_type === 'inspired').length
+          const loveCount = reactions.filter(r => r.reaction_type === 'love').length
+          const celebrateCount = reactions.filter(r => r.reaction_type === 'celebrate').length
+          const inspiredCount = reactions.filter(r => r.reaction_type === 'inspired').length
           
-          const userReactionRecord = reactions.find(r => r[queryCol] === postId && r.user_id === user.id)
+          const userReactionRecord = reactions.find(r => r.user_id === user.id)
           const userReaction = userReactionRecord ? (userReactionRecord.reaction_type as 'love' | 'celebrate' | 'inspired') : null
 
           return {

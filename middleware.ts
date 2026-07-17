@@ -17,6 +17,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api') ||
     pathname.startsWith('/auth/callback') ||
     pathname === '/favicon.ico' ||
+    pathname === '/manifest.json' ||
+    pathname === '/sw.js' ||
     pathname.match(/\.(svg|png|jpg|jpeg|gif|webp)$/)
   ) {
     return response
@@ -167,6 +169,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - Any image/asset files in public
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

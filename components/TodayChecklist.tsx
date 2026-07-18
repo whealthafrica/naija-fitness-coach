@@ -211,6 +211,7 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
   const supabase = createClient()
   
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([])
+  const [isNewUserSession, setIsNewUserSession] = useState<boolean>(false)
   const [activeTask, setActiveTask] = useState<TaskDef | null>(null)
   const [rankUpData, setRankUpData] = useState<{ oldTier: TierType; newTier: TierType } | null>(null)
   // DB-sourced: coach rank_up_quote collected at registration, never from static config
@@ -265,15 +266,14 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
     }
     
     // Cold start for new users: default to easiest pathway
-    const isNewUser = completedTaskIds.length === 0
-    if (isNewUser) {
+    if (isNewUserSession) {
       const easyPathway = staticData.pathway.map(simplifyTask)
       const easyCoach = staticData.coach.map(simplifyTask)
       return { pathway: easyPathway, coach: easyCoach }
     }
     
     return staticData
-  }, [selectedCondition, customTaskList, completedTaskIds])
+  }, [selectedCondition, customTaskList, isNewUserSession])
   const todayString = new Date().toISOString().split('T')[0]
   
   const defaultCoach = coachesConfig[selectedCondition] || coachesConfig['General Fitness']
@@ -315,6 +315,9 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
 
       if (data) {
         setCompletedTaskIds(data.map(d => d.task_id))
+        setIsNewUserSession(data.length === 0)
+      } else {
+        setIsNewUserSession(true)
       }
 
       // Fetch coach rank_up_quote from DB — not from static config
@@ -470,64 +473,72 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
       low_confidence_flag: isTooFast || (isRecallCorrect === false) || (identicalStreak > 4)
     }
 
-    // Save vitals log details if task type is vitals
-    if (activeTask.type === 'vitals') {
-      const systolicVal = selectedCondition === 'Hypertension' ? parseInt(vitalsSystolic, 10) : null
-      const diastolicVal = selectedCondition === 'Hypertension' ? parseInt(vitalsDiastolic, 10) : null
-      const sugarVal = (selectedCondition === 'Type 2 Diabetes' || selectedCondition === 'Pre-Diabetes') ? parseFloat(vitalsSugar) : null
-      const weightVal = vitalsWeight ? parseFloat(vitalsWeight) : null
+    // Capture task details for background flow
+    const completedTaskId = activeTask.id
+    const completedTaskType = activeTask.type
+    const completedTaskTitle = activeTask.title
+    const originalCompletedIds = completedTaskIds
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        await supabase.from('vitals_log').insert({
-          user_id: user.id,
-          systolic: systolicVal,
-          diastolic: diastolicVal,
-          blood_sugar: sugarVal,
-          weight: weightVal,
-          recorded_at: new Date().toISOString()
-        })
-      }
-    }
-
-    // Save state
-    const nextCompletedIds = [...completedTaskIds, activeTask.id]
+    // 1. Optimistically update completion state
+    const nextCompletedIds = [...completedTaskIds, completedTaskId]
     setCompletedTaskIds(nextCompletedIds)
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      // INTEGRITY RULE: Completion of this task awards CP and logs to task_completions,
-      // but does NOT increase patient_pathway_state.program_progress (and therefore has
-      // no effect on Iron Wallet payout). Self-reported health data is intentionally 
-      // kept financially un-incentivized to prevent falsification.
-      await supabase
-        .from('task_completions')
-        .insert({
-          user_id: user.id,
-          ...payload
-        })
-    }
+    // 2. Close modal immediately to avoid blocking the user
+    setActiveTask(null);
 
-    // Award Consistency Points and check for tier progression
-    try {
-      const cpSource = activeTask.type === 'vitals' ? 'vitals_checkin' : 'daily_checkin'
-      const cpResult = await awardConsistencyPoints(cpSource, false)
-      if (cpResult.tierUpOccurred) {
-        setRankUpData({
-          oldTier: cpResult.oldTier,
-          newTier: cpResult.newTier
-        })
+    // Run persistence in the background asynchronously
+    (async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError || !user) throw new Error('User session not found')
+
+        // A. Save vitals details if applicable
+        if (completedTaskType === 'vitals') {
+          const systolicVal = selectedCondition === 'Hypertension' ? parseInt(vitalsSystolic, 10) : null
+          const diastolicVal = selectedCondition === 'Hypertension' ? parseInt(vitalsDiastolic, 10) : null
+          const sugarVal = (selectedCondition === 'Type 2 Diabetes' || selectedCondition === 'Pre-Diabetes') ? parseFloat(vitalsSugar) : null
+          const weightVal = vitalsWeight ? parseFloat(vitalsWeight) : null
+
+          const { error: vitalsError } = await supabase.from('vitals_log').insert({
+            user_id: user.id,
+            systolic: systolicVal,
+            diastolic: diastolicVal,
+            blood_sugar: sugarVal,
+            weight: weightVal,
+            recorded_at: new Date().toISOString()
+          })
+          if (vitalsError) throw vitalsError
+        }
+
+        // B. Save task completion log
+        const { error: completionError } = await supabase
+          .from('task_completions')
+          .insert({
+            user_id: user.id,
+            ...payload
+          })
+        if (completionError) throw completionError
+
+        // C. Award Consistency Points and check for tier progression
+        const cpSource = completedTaskType === 'vitals' ? 'vitals_checkin' : 'daily_checkin'
+        const cpResult = await awardConsistencyPoints(cpSource, false)
+        if (cpResult.tierUpOccurred) {
+          setRankUpData({
+            oldTier: cpResult.oldTier,
+            newTier: cpResult.newTier
+          })
+        }
+
+        // D. Trigger struggle detection signals in background
+        detectStruggle(user.id, false).catch(console.error)
+
+      } catch (err: any) {
+        console.error('Failed to persist task completion:', err)
+        alert(`Failed to save "${completedTaskTitle}" to the server. Reverting check-in.`)
+        // Revert completion state
+        setCompletedTaskIds(originalCompletedIds)
       }
-    } catch (err) {
-      console.error('Failed to update CP:', err)
-    }
-
-    // Trigger struggle detection signals on completion
-    if (user) {
-      detectStruggle(user.id, false).catch(console.error)
-    }
-
-    setActiveTask(null)
+    })()
   }
 
   return (

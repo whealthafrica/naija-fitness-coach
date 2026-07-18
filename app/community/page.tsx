@@ -267,139 +267,157 @@ export default function CommunityPage() {
       return next
     })
 
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const targetPost = feedItems.find(p => p.id === postId)
-      if (!targetPost) return
-
-      const isTelemetry = targetPost.role === 'System'
-      const queryCol = isTelemetry ? 'telemetry_event_id' : 'community_post_id'
-
-      // Check if any reaction already exists for this post/user (select * to avoid maybeSingle multi-row crash)
-      const { data: userReactions, error: fetchError } = await supabase
-        .from('community_reactions')
-        .select('*')
-        .eq(queryCol, postId)
-        .eq('user_id', user.id)
-
-      if (fetchError) {
-        console.error('Failed to fetch reactions:', fetchError.message)
-        alert('Failed to check reactions. Please try again.')
-        return
-      }
-
-      const reactionsList = userReactions || []
-      const activeReaction = reactionsList.find(r => r.active)
-      const targetReaction = reactionsList.find(r => r.reaction_type === type)
-
-      if (activeReaction) {
-        if (activeReaction.reaction_type === type) {
-          // Tapping the same type: toggle active to false (un-react)
-          const { error: updateError } = await supabase
-            .from('community_reactions')
-            .update({ active: false })
-            .eq('id', activeReaction.id)
-
-          if (updateError) {
-            console.error('Failed to deactivate reaction:', updateError.message)
-            alert('Failed to update reaction. Please try again.')
-            return
-          }
-        } else {
-          // Tapping a different type: update the type directly on the active row in a single write!
-          const { error: updateError } = await supabase
-            .from('community_reactions')
-            .update({ reaction_type: type })
-            .eq('id', activeReaction.id)
-
-          if (updateError) {
-            console.error('Failed to switch reaction:', updateError.message)
-            alert('Failed to update reaction. Please try again.')
-            return
-          }
-        }
-      } else {
-        // No active reaction: either reactivate an inactive row or insert a new one
-        if (targetReaction) {
-          // Reactivate the existing row for this type
-          const { error: activateError } = await supabase
-            .from('community_reactions')
-            .update({ active: true })
-            .eq('id', targetReaction.id)
-
-          if (activateError) {
-            console.error('Failed to activate target reaction:', activateError.message)
-            alert('Failed to update reaction. Please try again.')
-            return
-          }
-        } else {
-          // Insert a new row for this type
-          const cpResult = await awardConsistencyPoints('community_reaction', false)
-          if (cpResult.tierUpOccurred) {
-            setRankUpData({
-              oldTier: cpResult.oldTier,
-              newTier: cpResult.newTier
-            })
-          }
-
-          const { error: insertError } = await supabase
-            .from('community_reactions')
-            .insert({
-              [queryCol]: postId,
-              user_id: user.id,
-              reaction_type: type,
-              cp_awarded: true,
-              active: true
-            })
-
-          if (insertError) {
-            console.error('Failed to insert new reaction:', insertError.message)
-            alert('Failed to save reaction. Please try again.')
-            return
-          }
-        }
-      }
-
-      // Re-fetch active reactions from DB for this specific post/event only (targeted query)
-      const { data: dbReactions } = await supabase
-        .from('community_reactions')
-        .select('*')
-        .eq(queryCol, postId)
-        .eq('active', true)
-
-      const reactions = dbReactions || []
-
-      setFeedItems(prevItems =>
-        prevItems.map(post => {
-          if (post.id !== postId) return post
-
-          const loveCount = reactions.filter(r => r.reaction_type === 'love').length
-          const celebrateCount = reactions.filter(r => r.reaction_type === 'celebrate').length
-          const inspiredCount = reactions.filter(r => r.reaction_type === 'inspired').length
-          
-          const userReactionRecord = reactions.find(r => r.user_id === user.id)
-          const userReaction = userReactionRecord ? (userReactionRecord.reaction_type as 'love' | 'celebrate' | 'inspired') : null
-
-          return {
-            ...post,
-            reactions: { love: loveCount, celebrate: celebrateCount, inspired: inspiredCount },
-            userReaction
-          }
-        })
-      )
-
-    } catch (err) {
-      console.error('Failed to handle reaction persistence:', err)
-    } finally {
+    const targetPost = feedItems.find(p => p.id === postId)
+    if (!targetPost) {
       setReactingPostIds(prev => {
         const next = new Set(prev)
         next.delete(postId)
         return next
       })
+      return
     }
+
+    const originalFeedItems = [...feedItems]
+    const currentReaction = targetPost.userReaction
+    let nextReaction: 'love' | 'celebrate' | 'inspired' | null = null
+    const nextReactionsCount = { ...targetPost.reactions }
+
+    if (currentReaction === type) {
+      // Toggle off
+      nextReaction = null
+      nextReactionsCount[type] = Math.max(0, (nextReactionsCount[type] || 0) - 1)
+    } else {
+      // Switch or Add
+      if (currentReaction) {
+        nextReactionsCount[currentReaction] = Math.max(0, (nextReactionsCount[currentReaction] || 0) - 1)
+      }
+      nextReaction = type
+      nextReactionsCount[type] = (nextReactionsCount[type] || 0) + 1
+    }
+
+    // Optimistically update the UI state immediately
+    setFeedItems(prevItems =>
+      prevItems.map(post =>
+        post.id === postId
+          ? { ...post, reactions: nextReactionsCount, userReaction: nextReaction }
+          : post
+      )
+    );
+
+    // Run persistence in the background
+    (async () => {
+      try {
+        const supabase = createClient()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError || !user) throw new Error('User not authenticated')
+
+        const isTelemetry = targetPost.role === 'System'
+        const queryCol = isTelemetry ? 'telemetry_event_id' : 'community_post_id'
+
+        // Check if any reaction already exists for this post/user
+        const { data: userReactions, error: fetchError } = await supabase
+          .from('community_reactions')
+          .select('*')
+          .eq(queryCol, postId)
+          .eq('user_id', user.id)
+
+        if (fetchError) throw fetchError
+
+        const reactionsList = userReactions || []
+        const activeReaction = reactionsList.find(r => r.active)
+        const targetReaction = reactionsList.find(r => r.reaction_type === type)
+
+        if (activeReaction) {
+          if (activeReaction.reaction_type === type) {
+            // Tapping the same type: toggle active to false (un-react)
+            const { error: updateError } = await supabase
+              .from('community_reactions')
+              .update({ active: false })
+              .eq('id', activeReaction.id)
+
+            if (updateError) throw updateError
+          } else {
+            // Tapping a different type: update the type directly on the active row
+            const { error: updateError } = await supabase
+              .from('community_reactions')
+              .update({ reaction_type: type })
+              .eq('id', activeReaction.id)
+
+            if (updateError) throw updateError
+          }
+        } else {
+          // No active reaction: either reactivate an inactive row or insert a new one
+          if (targetReaction) {
+            const { error: activateError } = await supabase
+              .from('community_reactions')
+              .update({ active: true })
+              .eq('id', targetReaction.id)
+
+            if (activateError) throw activateError
+          } else {
+            // Insert a new row for this type
+            const cpResult = await awardConsistencyPoints('community_reaction', false)
+            if (cpResult.tierUpOccurred) {
+              setRankUpData({
+                oldTier: cpResult.oldTier,
+                newTier: cpResult.newTier
+              })
+            }
+
+            const { error: insertError } = await supabase
+              .from('community_reactions')
+              .insert({
+                [queryCol]: postId,
+                user_id: user.id,
+                reaction_type: type,
+                cp_awarded: true,
+                active: true
+              })
+
+            if (insertError) throw insertError
+          }
+        }
+
+        // Re-fetch active reactions to sync counts with DB truth in background
+        const { data: dbReactions, error: syncError } = await supabase
+          .from('community_reactions')
+          .select('*')
+          .eq(queryCol, postId)
+          .eq('active', true)
+
+        if (syncError) throw syncError
+
+        const reactions = dbReactions || []
+        const loveCount = reactions.filter(r => r.reaction_type === 'love').length
+        const celebrateCount = reactions.filter(r => r.reaction_type === 'celebrate').length
+        const inspiredCount = reactions.filter(r => r.reaction_type === 'inspired').length
+        
+        const userReactionRecord = reactions.find(r => r.user_id === user.id)
+        const userReaction = userReactionRecord ? (userReactionRecord.reaction_type as 'love' | 'celebrate' | 'inspired') : null
+
+        setFeedItems(prevItems =>
+          prevItems.map(post => {
+            if (post.id !== postId) return post
+            return {
+              ...post,
+              reactions: { love: loveCount, celebrate: celebrateCount, inspired: inspiredCount },
+              userReaction
+            }
+          })
+        )
+
+      } catch (err) {
+        console.error('Failed to handle reaction persistence:', err)
+        alert('Failed to update reaction. Reverting to original state.')
+        setFeedItems(originalFeedItems)
+      } finally {
+        setReactingPostIds(prev => {
+          const next = new Set(prev)
+          next.delete(postId)
+          return next
+        })
+      }
+    })()
   }
 
   return (

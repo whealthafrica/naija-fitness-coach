@@ -21,12 +21,12 @@ type ButtonProps = {
  * - Border-radius: rounded-2xl (card/list row alignment)
  * - Height/Padding: py-4 px-6 (comfortable interactive touch target)
  * - Font: font-bold text-base
- * - Disabled colors: Burgundy muted pair (bg-[#D4A5B1], text-[#F5EDE1])
+ * - Disabled colors: Burgundy muted pair (bg-[#D4A5B1], text-[#F5F0EA])
  * -----------------------------------------------------------------------------
  */
 export function Button({ children, variant = 'primary', onClick, type = 'button', disabled = false, className = '' }: ButtonProps) {
   const styles = {
-    primary: 'bg-primary text-on-primary hover:opacity-90 disabled:bg-[#D4A5B1] disabled:text-[#F5EDE1] disabled:opacity-100',
+    primary: 'bg-primary text-on-primary hover:opacity-90 disabled:bg-[#D4A5B1] disabled:text-[#F5F0EA] disabled:opacity-100',
     secondary: 'bg-transparent text-primary border-2 border-primary hover:bg-primary/5 disabled:border-[#D4A5B1] disabled:text-[#D4A5B1] disabled:bg-transparent disabled:opacity-100',
     danger: 'bg-danger text-on-primary hover:opacity-90 disabled:opacity-40',
   }

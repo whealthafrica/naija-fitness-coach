@@ -8,7 +8,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: '#F5EDE1',    // Cream — background, all screens
+        // SINGLE SOURCE OF TRUTH FOR THE APP BACKGROUND COLOR
+        // Individual screens must not define their own background values.
+        background: '#F5F0EA',    // Cream — background, all screens
         surface: '#FAF4EC',       // Linen — cards, sheets, input backgrounds
         primary: '#6B2737',       // Burgundy — primary, buttons, dominant illustration
         accent: '#C9962C',        // Gold — accent only, never button fill

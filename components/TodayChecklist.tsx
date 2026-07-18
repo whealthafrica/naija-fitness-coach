@@ -657,7 +657,7 @@ export function TodayChecklist({ selectedCondition, assignedCoachName, customTas
             {activeTask.type === 'SLIDER' && (
               <div className="space-y-6 py-2">
                 <div className="space-y-3">
-                  <div className="text-center py-3 bg-[#F8F8F0] rounded-xl border border-divider/50">
+                  <div className="text-center py-3 bg-background rounded-xl border border-divider/50">
                     <span className="text-3xl font-extrabold text-[#781818] font-mono">{sliderValue}</span>
                     {activeTask.sliderUnit && (
                       <span className="text-sm font-bold text-text-secondary ml-1">{activeTask.sliderUnit}</span>

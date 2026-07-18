@@ -280,7 +280,7 @@ export default function ClientDetailClient() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8F8F0] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#781818]" />
       </div>
     )
@@ -288,7 +288,7 @@ export default function ClientDetailClient() {
 
   if (error || !detail) {
     return (
-      <div className="min-h-screen bg-[#F8F8F0] p-8 text-center text-[#100808]/60">
+      <div className="min-h-screen bg-background p-8 text-center text-[#100808]/60">
         <p className="font-semibold text-lg">{error || 'Could not load client detail.'}</p>
         <button onClick={() => router.push('/coach/dashboard')} className="mt-4 text-[#781818] font-bold text-sm">
           Return to Dashboard
@@ -306,7 +306,7 @@ export default function ClientDetailClient() {
   const cpPoints = getSvgCoordinates(completions, 'cp', daysLimit)
 
   return (
-    <div className="min-h-screen bg-[#F8F8F0] text-[#100808] font-sans pb-16">
+    <div className="min-h-screen bg-background text-[#100808] font-sans pb-16">
       {/* Top Navbar */}
       <header className="bg-white border-b border-[#100808]/8 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -330,7 +330,7 @@ export default function ClientDetailClient() {
               <p className="text-sm text-[#100808]/60 mt-1">{profile.condition}</p>
             </div>
             <div className="text-right">
-              <span className="text-xs font-bold bg-[#F8F8F0] border border-[#100808]/15 px-3 py-1.5 rounded-full uppercase tracking-wider text-[#781818]">
+              <span className="text-xs font-bold bg-background border border-[#100808]/15 px-3 py-1.5 rounded-full uppercase tracking-wider text-[#781818]">
                 {profile.tier} Tier
               </span>
             </div>
@@ -372,7 +372,7 @@ export default function ClientDetailClient() {
                   <button
                     onClick={() => setChartPeriod('weekly')}
                     className={`px-3 py-1 rounded-xl text-xs font-bold border ${
-                      chartPeriod === 'weekly' ? 'bg-[#781818] text-white border-transparent' : 'bg-white text-[#100808]/60 border-[#100808]/15 hover:bg-[#F8F8F0]'
+                      chartPeriod === 'weekly' ? 'bg-[#781818] text-white border-transparent' : 'bg-white text-[#100808]/60 border-[#100808]/15 hover:bg-background'
                     }`}
                   >
                     Weekly View
@@ -380,7 +380,7 @@ export default function ClientDetailClient() {
                   <button
                     onClick={() => setChartPeriod('monthly')}
                     className={`px-3 py-1 rounded-xl text-xs font-bold border ${
-                      chartPeriod === 'monthly' ? 'bg-[#781818] text-white border-transparent' : 'bg-white text-[#100808]/60 border-[#100808]/15 hover:bg-[#F8F8F0]'
+                      chartPeriod === 'monthly' ? 'bg-[#781818] text-white border-transparent' : 'bg-white text-[#100808]/60 border-[#100808]/15 hover:bg-background'
                     }`}
                   >
                     Monthly View
@@ -392,7 +392,7 @@ export default function ClientDetailClient() {
                 {/* Chart 1: Program Progress */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-[#100808]/50 uppercase tracking-wider block">Program Pathway Progress (%)</span>
-                  <div className="border border-[#100808]/8 rounded-xl p-3 bg-[#F8F8F0]/30 flex items-center justify-center">
+                  <div className="border border-[#100808]/8 rounded-xl p-3 bg-background/30 flex items-center justify-center">
                     <svg viewBox="0 0 450 150" className="w-full h-auto">
                       <line x1="20" y1="20" x2="430" y2="20" stroke="#100808" strokeOpacity="0.05" />
                       <line x1="20" y1="75" x2="430" y2="75" stroke="#100808" strokeOpacity="0.05" />
@@ -423,7 +423,7 @@ export default function ClientDetailClient() {
                 {/* Chart 2: Consistency Points */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-[#100808]/50 uppercase tracking-wider block">Consistency Points (CP) Accumulation</span>
-                  <div className="border border-[#100808]/8 rounded-xl p-3 bg-[#F8F8F0]/30 flex items-center justify-center">
+                  <div className="border border-[#100808]/8 rounded-xl p-3 bg-background/30 flex items-center justify-center">
                     <svg viewBox="0 0 450 150" className="w-full h-auto">
                       <line x1="20" y1="20" x2="430" y2="20" stroke="#100808" strokeOpacity="0.05" />
                       <line x1="20" y1="75" x2="430" y2="75" stroke="#100808" strokeOpacity="0.05" />
@@ -536,7 +536,7 @@ export default function ClientDetailClient() {
               ) : (
                 <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                   {outreachLogs.map((log: any) => (
-                    <div key={log.id} className="p-4 border border-[#100808]/5 bg-[#F8F8F0]/30 rounded-xl space-y-2">
+                    <div key={log.id} className="p-4 border border-[#100808]/5 bg-background/30 rounded-xl space-y-2">
                       <div className="flex justify-between items-center text-xs">
                         <span className="font-bold text-[#781818] uppercase tracking-wider">{log.channel}</span>
                         <span className="text-[#100808]/40">{new Date(log.created_at).toLocaleString()}</span>
@@ -672,7 +672,7 @@ export default function ClientDetailClient() {
               )}
 
               {insight ? (
-                <div className="text-xs text-[#100808]/80 leading-relaxed font-sans bg-[#F8F8F0] p-4 border border-[#100808]/5 rounded-xl whitespace-pre-wrap">
+                <div className="text-xs text-[#100808]/80 leading-relaxed font-sans bg-background p-4 border border-[#100808]/5 rounded-xl whitespace-pre-wrap">
                   {insight}
                 </div>
               ) : (
@@ -698,7 +698,7 @@ export default function ClientDetailClient() {
                 </button>
               </div>
 
-              <div className="text-[10px] text-[#100808]/60 leading-relaxed bg-[#F8F8F0] border border-divider/40 p-3 rounded-xl mt-2">
+              <div className="text-[10px] text-[#100808]/60 leading-relaxed bg-background border border-divider/40 p-3 rounded-xl mt-2">
                 <strong>Note:</strong> Custom coach-assigned tasks earn Consistency Points (CP) but are excluded from the client&apos;s Program Progress and payout calculations by design.
               </div>
 
@@ -781,7 +781,7 @@ export default function ClientDetailClient() {
               </div>
 
               {assignOpen && (
-                <form onSubmit={handleAssignTask} className="space-y-4 p-4 border border-[#100808]/10 rounded-xl bg-[#F8F8F0]/30 text-xs">
+                <form onSubmit={handleAssignTask} className="space-y-4 p-4 border border-[#100808]/10 rounded-xl bg-background/30 text-xs">
                   <div>
                     <label className="block font-bold text-[#100808]/50 uppercase tracking-wider">Task Title</label>
                     <input
@@ -920,7 +920,7 @@ export default function ClientDetailClient() {
                           <p className="font-semibold">{t.title}</p>
                           <p className="text-[10px] text-[#100808]/50 truncate">{t.desc}</p>
                         </div>
-                        <span className="text-[9px] font-bold bg-[#F8F8F0] px-2 py-1 rounded-full uppercase tracking-wider text-[#781818]">
+                        <span className="text-[9px] font-bold bg-background px-2 py-1 rounded-full uppercase tracking-wider text-[#781818]">
                           {t.type}
                         </span>
                       </div>
@@ -942,7 +942,7 @@ export default function ClientDetailClient() {
               <div className="flex gap-2">
                 <a
                   href={`tel:${profile.phone}`}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border border-[#100808]/15 rounded-xl text-xs font-bold text-[#100808] hover:bg-[#F8F8F0] transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border border-[#100808]/15 rounded-xl text-xs font-bold text-[#100808] hover:bg-background transition-colors"
                 >
                   <Phone className="h-3.5 w-3.5 text-[#C8923C]" />
                   Call
@@ -951,7 +951,7 @@ export default function ClientDetailClient() {
                   href={`https://wa.me/${profile.phone?.replace(/[^0-9]/g, '')}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border border-[#100808]/15 rounded-xl text-xs font-bold text-[#100808] hover:bg-[#F8F8F0] transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border border-[#100808]/15 rounded-xl text-xs font-bold text-[#100808] hover:bg-background transition-colors"
                 >
                   <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
                   WhatsApp

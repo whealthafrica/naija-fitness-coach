@@ -16,7 +16,7 @@ export function BottomNav() {
   ]
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 h-16 border-t border-divider bg-surface">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 h-20 border-t border-divider bg-surface">
       <div className="mx-auto flex h-full max-w-md items-center justify-around px-1">
         {tabs.map((tab) => {
           const Icon = tab.icon
@@ -25,12 +25,12 @@ export function BottomNav() {
             <Link
               key={tab.name}
               href={tab.href}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-0 px-1 transition-colors ${
+              className={`flex flex-col items-center justify-center gap-1 w-full h-full min-w-0 px-1 transition-colors ${
                 isActive ? 'text-primary' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
-              <span className="text-[10px] font-medium leading-none truncate w-full text-center">{tab.name}</span>
+              <Icon className="h-[28px] w-[28px] shrink-0" />
+              <span className="text-[12px] font-bold leading-none truncate w-full text-center">{tab.name}</span>
             </Link>
           )
         })}

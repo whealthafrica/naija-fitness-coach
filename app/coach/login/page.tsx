@@ -35,11 +35,11 @@ export default function CoachLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F8F0] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+    <div className="min-h-screen bg-background flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto w-full max-w-md">
         {/* Brand Logo */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="h-8 w-8 rounded-lg bg-[#781818] flex items-center justify-center text-[#F8F8F0] font-bold text-base">
+          <div className="h-8 w-8 rounded-lg bg-[#781818] flex items-center justify-center text-background font-bold text-base">
             N
           </div>
           <span className="text-[#100808] font-bold text-sm tracking-wider uppercase">NFC Portal</span>

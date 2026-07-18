@@ -431,19 +431,19 @@ export default function CoachDashboard() {
 
   if (loading && clients.length === 0) {
     return (
-      <div className="min-h-screen bg-[#F8F8F0] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#781818]" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F8F0] text-[#100808] font-sans pb-16">
+    <div className="min-h-screen bg-background text-[#100808] font-sans pb-16">
       {/* Top Navbar */}
       <header className="bg-white border-b border-[#100808]/8 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="h-8 w-8 rounded-lg bg-[#781818] flex items-center justify-center text-[#F8F8F0] font-bold text-base">
+            <div className="h-8 w-8 rounded-lg bg-[#781818] flex items-center justify-center text-background font-bold text-base">
               N
             </div>
             <span className="font-bold text-sm tracking-wider uppercase hidden sm:inline">NFC Coach Panel</span>
@@ -451,7 +451,7 @@ export default function CoachDashboard() {
 
           <div className="flex items-center gap-3">
             {role === 'superadmin' && (
-              <div className="flex items-center gap-2 bg-[#F8F8F0] border border-[#100808]/10 px-3 py-1.5 rounded-xl text-xs font-semibold">
+              <div className="flex items-center gap-2 bg-background border border-[#100808]/10 px-3 py-1.5 rounded-xl text-xs font-semibold">
                 <Shield className="h-3.5 w-3.5 text-[#C8923C]" />
                 <span>Superadmin Role</span>
               </div>
@@ -459,7 +459,7 @@ export default function CoachDashboard() {
 
             <button
               onClick={() => setPasswordModalOpen(true)}
-              className="p-2.5 rounded-xl border border-[#100808]/10 hover:bg-[#F8F8F0] transition-colors"
+              className="p-2.5 rounded-xl border border-[#100808]/10 hover:bg-background transition-colors"
               title="Account Settings"
             >
               <Settings className="h-4 w-4 text-[#100808]/60" />
@@ -609,7 +609,7 @@ export default function CoachDashboard() {
                           <tr
                             key={c.id}
                             onClick={() => router.push(`/coach/client?id=${c.id}`)}
-                            className="hover:bg-[#F8F8F0]/30 cursor-pointer transition-colors"
+                            className="hover:bg-background/30 cursor-pointer transition-colors"
                           >
                             <td className="py-4 pr-4 font-bold text-[#100808]">{c.name}</td>
                             <td className="py-4 pr-4 text-[#100808]/70">{c.condition}</td>
@@ -779,7 +779,7 @@ export default function CoachDashboard() {
                               {c.illustration ? (
                                 <img src={c.illustration} alt={c.name} className="h-full w-full object-cover" />
                               ) : (
-                                <span className="text-[#F8F8F0] font-bold text-sm select-none">
+                                <span className="text-background font-bold text-sm select-none">
                                   {c.name.charAt(0).toUpperCase()}
                                 </span>
                               )}
@@ -929,7 +929,7 @@ export default function CoachDashboard() {
 
                 {/* Draft Pathway Results & Confirmation */}
                 {draftResult && (
-                  <div className="p-5 border border-[#C8923C]/30 bg-[#F8F8F0] rounded-2xl space-y-4">
+                  <div className="p-5 border border-[#C8923C]/30 bg-background rounded-2xl space-y-4">
                     <h4 className="font-bold text-sm text-[#C8923C] uppercase tracking-wider">AI Drafted Checkpoints (Review Required)</h4>
 
                     {draftResult.data.isAmbiguous && (

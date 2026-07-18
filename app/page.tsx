@@ -92,7 +92,7 @@ export default async function TodayPage() {
               />
             </div>
           ) : (
-            <div className="h-10 w-10 rounded-full bg-[#781818] flex items-center justify-center text-[#F8F8F0] font-bold text-base select-none shrink-0">
+            <div className="h-10 w-10 rounded-full bg-[#781818] flex items-center justify-center text-background font-bold text-base select-none shrink-0">
               {activeCoach.name.charAt(0).toUpperCase()}
             </div>
           )}

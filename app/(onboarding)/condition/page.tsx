@@ -6,7 +6,32 @@ import Image from 'next/image'
 import { createClient } from '@/utils/supabase/client'
 import { Button } from '@/components/Button'
 import { motion } from 'framer-motion'
-import { HeartPulse, Moon, Activity, Droplet, Dumbbell, Loader2 } from 'lucide-react'
+import { HeartPulse, Moon, Activity, Droplet, Loader2 } from 'lucide-react'
+
+// Custom horizontal dumbbell icon to prevent it from looking like a bow/ribbon (symmetric, clean stroke)
+const HorizontalDumbbell = ({ className }: { className?: string }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    {/* Left weight bell */}
+    <rect x="2" y="5" width="4" height="14" rx="1.5" />
+    {/* Left inner weight ring */}
+    <rect x="6" y="8" width="2" height="8" rx="1" />
+    {/* Connecting bar shaft */}
+    <path d="M8 12h8" />
+    {/* Right inner weight ring */}
+    <rect x="16" y="8" width="2" height="8" rx="1" />
+    {/* Right weight bell */}
+    <rect x="18" y="5" width="4" height="14" rx="1.5" />
+  </svg>
+)
 
 // Define matching left icons for each condition (unambiguous, consistent stroke, Comfort size)
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -14,7 +39,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   'hypertension': HeartPulse, // heart-pulse icon
   'pcos': Moon, // moon/cycle icon
   'pre-diabetes': Activity, // pulse-line icon (distinct from HeartPulse)
-  'general-fitness': Dumbbell // clear dumbbell icon (unambiguous)
+  'general-fitness': HorizontalDumbbell // horizontal custom dumbbell icon (symmetric and clear)
 }
 
 export default function ConditionPage() {
@@ -115,7 +140,7 @@ export default function ConditionPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen justify-start bg-[#F8F8F0] pb-36">
+    <div className="flex flex-col min-h-screen justify-start bg-background pb-36">
       {/* Header with Short Illustration and Text */}
       <div className="space-y-4 text-center mt-8 px-6">
         <Image
@@ -197,7 +222,7 @@ export default function ConditionPage() {
         </div>
 
         {/* Viewport Pinned Continue Tap Button */}
-        <div className="fixed bottom-0 left-0 right-0 bg-[#F8F8F0]/80 backdrop-blur-md border-t border-[#100808]/5 px-6 py-5 z-40">
+        <div className="fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-md border-t border-[#100808]/5 px-6 py-5 z-40">
           <div className="max-w-sm mx-auto">
             <Button
               variant="primary"

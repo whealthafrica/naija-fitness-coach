@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient as createServerSupabase } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { normalizePhoneNumber } from '@/utils/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized session' }, { status: 401 })
     }
 
+    const normalizedPhone = normalizePhoneNumber(phone)
     const adminSupabase = createAdminClient(supabaseUrl, supabaseKey)
 
     // 2. Check universal bypass OTP
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
     const { data: existingUser, error: checkError } = await adminSupabase
       .from('users')
       .select('id')
-      .eq('phone', phone)
+      .eq('phone', normalizedPhone)
       .maybeSingle()
 
     if (checkError) {
@@ -56,13 +58,13 @@ export async function POST(request: NextRequest) {
       await adminSupabase.from('telemetry_events').insert({
         user_id: user.id,
         event_type: 'poc_phone_bypass',
-        metadata: { phone, bypass_code: '123456' }
+        metadata: { phone: normalizedPhone, bypass_code: '123456' }
       })
 
       // Update auth user profile directly using admin API (skips Twilio SMS delivery/OTP confirmation)
       const { error: updateAuthError } = await adminSupabase.auth.admin.updateUserById(
         user.id,
-        { phone, phone_confirm: true }
+        { phone: normalizedPhone, phone_confirm: true }
       )
 
       if (updateAuthError) {
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
       // Synchronize changes to public.users table
       const { error: updateDbError } = await adminSupabase
         .from('users')
-        .update({ phone })
+        .update({ phone: normalizedPhone })
         .eq('id', user.id)
 
       if (updateDbError) {
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
       // --- NORMAL MODE ---
       // Verify code against the current session
       const { error: verifyError } = await supabase.auth.verifyOtp({
-        phone,
+        phone: normalizedPhone,
         token: code,
         type: 'phone_change'
       })
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
       // Synchronize confirmed phone change to public.users table
       const { error: updateDbError } = await adminSupabase
         .from('users')
-        .update({ phone })
+        .update({ phone: normalizedPhone })
         .eq('id', user.id)
 
       if (updateDbError) {

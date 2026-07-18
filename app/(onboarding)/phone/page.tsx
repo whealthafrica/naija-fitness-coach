@@ -56,26 +56,18 @@ export default function PhonePage() {
     const fullNumber = `+234${phoneNumber}`
 
     try {
-      const { error: otpError } = await supabase.auth.updateUser({
-        phone: fullNumber,
+      const response = await fetch('/api/request-phone-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone: fullNumber }),
       })
 
-      if (otpError) {
-        if (
-          otpError.message.toLowerCase().includes('already registered') ||
-          otpError.message.toLowerCase().includes('already exists') ||
-          otpError.status === 422
-        ) {
-          setError(
-            'This phone number is already registered to another account. If you believe this is a mistake, contact support.'
-          )
-        } else if (otpError.message.includes('phone provider') || otpError.message.includes('SMS')) {
-          setError(
-            'SMS provider is not configured on the hosted Supabase Console. For testing, please register this number in Authentication -> Providers -> Phone -> Test Phone Numbers with a mock code in the dashboard.'
-          )
-        } else {
-          setError(otpError.message)
-        }
+      const result = await response.json()
+
+      if (!response.ok) {
+        setError(result.error || 'Could not send verification code right now. Please try again.')
       } else {
         router.push(`/verify?phone=${encodeURIComponent(fullNumber)}`)
       }
